@@ -171,12 +171,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.container.resultPanel.finish()
             } catch let err as SliceError {
-                // 已分类的应用错误：直接走 fail 以展示 userMessage
-                self.container.resultPanel.fail(with: err)
+                // 已分类的应用错误：展示 userMessage，并挂上 [重试]/[打开设置] 恢复动作
+                // 重试动作：在主线程重新触发一次本次 execute（参数不变，闭包捕获 tool/payload）
+                // 打开设置：跳转到 Settings 窗口，方便用户修正 API Key 等配置
+                self.container.resultPanel.fail(
+                    with: err,
+                    onRetry: { [weak self] in
+                        guard let self else { return }
+                        self.execute(tool: tool, payload: payload)
+                    },
+                    onOpenSettings: { [weak self] in
+                        self?.showSettings()
+                    }
+                )
             } catch {
                 // 未分类错误：统一降级为 provider.invalidResponse 以复用 userMessage 体系
                 // 注：invalidResponse 的字符串 payload 会被 developerContext 脱敏为 <redacted>
-                self.container.resultPanel.fail(with: .provider(.invalidResponse(String(describing: error))))
+                // 同样提供重试 / 打开设置恢复动作，避免把"未知错误"变成死胡同
+                self.container.resultPanel.fail(
+                    with: .provider(.invalidResponse(String(describing: error))),
+                    onRetry: { [weak self] in
+                        guard let self else { return }
+                        self.execute(tool: tool, payload: payload)
+                    },
+                    onOpenSettings: { [weak self] in self?.showSettings() }
+                )
             }
         }
     }
