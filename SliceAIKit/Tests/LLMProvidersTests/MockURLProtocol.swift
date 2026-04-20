@@ -42,3 +42,35 @@ extension URLSession {
         return URLSession(configuration: config)
     }
 }
+
+extension MockURLProtocol {
+    /// 按顺序返回多组响应；顺序由数组决定，最后一个会被重复使用
+    /// 用途：测试重试/退避逻辑，让同一个 URLSession 在不同 attempt 里拿到不同状态
+    /// - Parameter responses: 按次序使用的响应列表；索引超过数组长度时会一直复用最后一项
+    static func setSequencedResponses(_ responses: [(HTTPURLResponse, Data)]) {
+        let box = ResponseBox(responses: responses)
+        requestHandler = { _ in box.next() }
+    }
+
+    /// 线程安全的响应盒子，缓存按序推进的响应列表
+    /// 注：MockURLProtocol 在 URLSession 的工作队列上被调用，因此必须加锁才能安全 mutate index
+    private final class ResponseBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private let responses: [(HTTPURLResponse, Data)]
+        private var index = 0
+
+        init(responses: [(HTTPURLResponse, Data)]) {
+            self.responses = responses
+        }
+
+        /// 返回下一组响应；超出数组长度时复用最后一项，避免崩溃
+        func next() -> (HTTPURLResponse, Data) {
+            lock.lock()
+            defer { lock.unlock() }
+            let clamped = min(index, responses.count - 1)
+            let value = responses[clamped]
+            index += 1
+            return value
+        }
+    }
+}

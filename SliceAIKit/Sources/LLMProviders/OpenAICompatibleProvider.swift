@@ -26,9 +26,30 @@ public struct OpenAICompatibleProvider: LLMProvider {
     /// 发起流式 chat completion 请求并将 SSE 解码为 ChatChunk 流
     /// - Parameter request: 领域层定义的 ChatRequest（含 model / messages / 参数）
     /// - Returns: AsyncThrowingStream<ChatChunk, any Error>；遇 HTTP 错误会在 await 阶段抛出
+    /// - Note: 429 会按 spec §7.2 触发一次指数退避重试，第二次仍失败则抛出最终错误
     public func stream(
         request: ChatRequest
     ) async throws -> AsyncThrowingStream<ChatChunk, any Error> {
+        let httpReq = try buildURLRequest(for: request)
+
+        // 第一次尝试：若 429 则等待后再试一次；其余错误立刻抛出
+        let (firstBytes, firstResp) = try await performRequest(httpReq)
+        if firstResp.statusCode == 429 {
+            try await backoff(for: firstResp)
+            let (secondBytes, secondResp) = try await performRequest(httpReq)
+            try Self.throwIfErrorStatus(secondResp)
+            return Self.makeStream(from: secondBytes)
+        }
+
+        try Self.throwIfErrorStatus(firstResp)
+        return Self.makeStream(from: firstBytes)
+    }
+
+    /// 构造发起 chat completion 请求的 URLRequest
+    /// - Parameter request: 领域层 ChatRequest，需追加 stream: true
+    /// - Returns: 已设置 headers / body / timeout 的 URLRequest
+    /// - Throws: JSONEncoder / JSONSerialization 的编码错误
+    private func buildURLRequest(for request: ChatRequest) throws -> URLRequest {
         // 组装 URL：baseURL 通常形如 https://api.openai.com/v1
         let endpoint = baseURL.appendingPathComponent("chat/completions")
         var httpReq = URLRequest(url: endpoint)
@@ -45,17 +66,40 @@ public struct OpenAICompatibleProvider: LLMProvider {
             body = try JSONSerialization.data(withJSONObject: dict)
         }
         httpReq.httpBody = body
+        return httpReq
+    }
 
-        // 发起请求；bytes 为可异步读取的字节流，response 用于状态码判定
+    /// 发起一次 HTTP 请求并校验响应是 HTTPURLResponse
+    /// - Parameter httpReq: 已构造好的 URLRequest
+    /// - Returns: 可异步读取的字节流与 HTTP 响应
+    /// - Throws: SliceError.provider(.invalidResponse) 当响应不是 HTTPURLResponse
+    private func performRequest(
+        _ httpReq: URLRequest
+    ) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
         let (bytes, response) = try await session.bytes(for: httpReq)
         guard let http = response as? HTTPURLResponse else {
             throw SliceError.provider(.invalidResponse("non-http response"))
         }
+        return (bytes, http)
+    }
 
-        // 先做状态码分流，便于在 await 阶段就抛出错误，无需进入流循环
+    /// 根据 429 响应计算退避时长并等待
+    /// - Parameter response: 首次请求返回的 429 响应
+    /// - Note: 退避时长 = min(Retry-After, 5s)；header 缺失时退 1 秒（spec §7.2）
+    private func backoff(for response: HTTPURLResponse) async throws {
+        let hint = response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+        // 1s 默认；上限 5s，避免 MVP 卡顿过久
+        let backoff = min(hint ?? 1.0, 5.0)
+        try await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
+    }
+
+    /// 把 HTTP 状态码映射为领域层错误，2xx 直接通过
+    /// - Parameter http: 待判定的 HTTP 响应
+    /// - Throws: SliceError.provider 对应错误
+    private static func throwIfErrorStatus(_ http: HTTPURLResponse) throws {
         switch http.statusCode {
         case 200..<300:
-            break
+            return
         case 401:
             throw SliceError.provider(.unauthorized)
         case 429:
@@ -66,9 +110,6 @@ public struct OpenAICompatibleProvider: LLMProvider {
         default:
             throw SliceError.provider(.invalidResponse("HTTP \(http.statusCode)"))
         }
-
-        // 2xx 成功：把字节流接入 SSE 解码器，逐事件映射成 ChatChunk
-        return Self.makeStream(from: bytes)
     }
 
     /// 将 URLSession.AsyncBytes 封装为 ChatChunk 流
@@ -89,7 +130,7 @@ public struct OpenAICompatibleProvider: LLMProvider {
                             // 以 UTF-8 解码当前缓冲的一整行（含换行），交给 SSEDecoder
                             if let line = String(bytes: buffer, encoding: .utf8) {
                                 let events = decoder.feed(line)
-                                if emitAndCheckDone(events, continuation: continuation) {
+                                if try emitAndCheckDone(events, continuation: continuation) {
                                     return
                                 }
                             }
@@ -102,7 +143,7 @@ public struct OpenAICompatibleProvider: LLMProvider {
                         tail = s
                     }
                     let rest = decoder.feed(tail + "\n\n")
-                    _ = emitAndCheckDone(rest, continuation: continuation)
+                    _ = try emitAndCheckDone(rest, continuation: continuation)
                     continuation.finish()
                 } catch {
                     // URLSession 超时映射为领域层 networkTimeout，其余原样抛出
@@ -119,14 +160,16 @@ public struct OpenAICompatibleProvider: LLMProvider {
 
     /// 把解码得到的 SSE 事件转换成 ChatChunk 并投递给 continuation
     /// - Returns: 是否遇到 [DONE]；true 时调用方应立即退出循环
+    /// - Throws: 当 data 行 JSON 解析失败时抛出 SliceError.provider(.sseParseError)
     private static func emitAndCheckDone(
         _ events: [SSEDecoder.Event],
         continuation: AsyncThrowingStream<ChatChunk, any Error>.Continuation
-    ) -> Bool {
+    ) throws -> Bool {
         for event in events {
             switch event {
             case .data(let json):
-                if let chunk = decodeChunk(json: json) {
+                // decodeChunk 返回 nil = 合法 skip（role-only / finish-only frame），不 yield
+                if let chunk = try decodeChunk(json: json) {
                     continuation.yield(chunk)
                 }
             case .done:
@@ -137,18 +180,40 @@ public struct OpenAICompatibleProvider: LLMProvider {
         return false
     }
 
-    /// 将一行 SSE data JSON 解码成 ChatChunk；无法识别返回 nil
+    /// 解码一条 SSE `data:` JSON 行
     /// - Parameter json: SSE data 字段的原始 JSON 字符串
-    /// - Returns: 解析成功且有意义的 ChatChunk；否则 nil
-    private static func decodeChunk(json: String) -> ChatChunk? {
-        guard let data = json.data(using: .utf8) else { return nil }
-        guard let parsed = try? JSONDecoder().decode(OpenAIStreamChunk.self, from: data) else {
-            return nil
+    /// - Returns: `nil` 表示这是合法但无增量的 chunk（如 role-only 首帧），应静默跳过
+    /// - Throws: `SliceError.provider(.sseParseError)` 当 JSON 无法解析或结构不符
+    private static func decodeChunk(json: String) throws -> ChatChunk? {
+        guard let data = json.data(using: .utf8) else {
+            throw SliceError.provider(.sseParseError("non-utf8 data line"))
+        }
+        let parsed: OpenAIStreamChunk
+        do {
+            parsed = try JSONDecoder().decode(OpenAIStreamChunk.self, from: data)
+        } catch let error as DecodingError {
+            // 脱敏：只取 DecodingError 的 case 名称，不回传原文
+            throw SliceError.provider(.sseParseError(summarize(decodingError: error)))
+        } catch {
+            throw SliceError.provider(.sseParseError("decode failed"))
         }
         let delta = parsed.choices.first?.delta.content ?? ""
         let reason = parsed.choices.first?.finishReason.flatMap(FinishReason.init(rawValue:))
         // 空 delta 且无 finishReason 的 chunk 无意义，过滤
         if delta.isEmpty && reason == nil { return nil }
         return ChatChunk(delta: delta, finishReason: reason)
+    }
+
+    /// 将 DecodingError 概括为一个简短字符串，避免把响应体 / 用户数据带进错误里
+    /// - Parameter error: JSONDecoder 抛出的 DecodingError
+    /// - Returns: 便于日志与排障的简短摘要（不含原始 payload）
+    private static func summarize(decodingError error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, _): return "keyNotFound(\(key.stringValue))"
+        case .valueNotFound(let type, _): return "valueNotFound(\(type))"
+        case .typeMismatch(let type, _): return "typeMismatch(\(type))"
+        case .dataCorrupted: return "dataCorrupted"
+        @unknown default: return "unknown"
+        }
     }
 }
