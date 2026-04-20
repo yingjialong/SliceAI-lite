@@ -32,7 +32,6 @@ public struct SSEDecoder {
         // 将新分片并入缓冲区，保留跨次调用未闭合的数据
         buffer += chunk
         var events: [Event] = []
-        print("[SSEDecoder] 收到 chunk 长度=\(chunk.count), 当前 buffer 长度=\(buffer.count)")
 
         // 按 \n 逐行消费缓冲区，直至没有完整行为止
         while let newlineRange = buffer.range(of: "\n") {
@@ -49,10 +48,8 @@ public struct SSEDecoder {
                     let joined = eventDataLines.joined(separator: "\n")
                     eventDataLines.removeAll(keepingCapacity: true)
                     if joined == "[DONE]" {
-                        print("[SSEDecoder] 发出 .done 事件")
                         events.append(.done)
                     } else {
-                        print("[SSEDecoder] 发出 .data 事件, payload 长度=\(joined.count)")
                         events.append(.data(joined))
                     }
                 }
