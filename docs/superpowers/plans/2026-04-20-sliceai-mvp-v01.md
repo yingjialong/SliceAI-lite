@@ -98,16 +98,85 @@ SliceAI/
 
 ## Milestones
 
-- **M1 — Project green (end of Phase 0)**: SPM builds clean, CI runs on push, README/LICENSE in place
-- **M2 — Testable core (end of Phase 2)**: `SliceCore` + `LLMProviders` pass all tests; can hand-call `OpenAICompatibleProvider.stream()` against real OpenAI API
-- **M3 — Input stack (end of Phase 4)**: Selection capture + hotkeys have unit tests + manual smoke verification
-- **M4 — UI stack (end of Phase 7)**: All three NSPanels render; Settings GUI works with sample config
-- **M5 — Integrated app (end of Phase 8)**: Full app runs end-to-end: select text → toolbar → click tool → LLM streams result
-- **M6 — Shippable (end of Phase 9)**: `SliceAI-0.1.0.dmg` built by CI, installs on fresh Mac
+- ✅ **M1 — Project green (end of Phase 0)** — reached at `30f8068` (2026-04-20). SPM builds clean, CI defined, README/LICENSE in place.
+- ✅ **M2 — Testable core (end of Phase 2)** — reached at `efd31b6` (2026-04-20). 53 tests passing, CI green on `main`, `OpenAICompatibleProvider.stream()` ready for live use.
+- ⏳ **M3 — Input stack (end of Phase 4)**: Selection capture + hotkeys have unit tests + manual smoke verification
+- ⏳ **M4 — UI stack (end of Phase 7)**: All three NSPanels render; Settings GUI works with sample config
+- ⏳ **M5 — Integrated app (end of Phase 8)**: Full app runs end-to-end: select text → toolbar → click tool → LLM streams result
+- ⏳ **M6 — Shippable (end of Phase 9)**: `SliceAI-0.1.0.dmg` built by CI, installs on fresh Mac
+
+---
+
+## Completion Log
+
+> **Status as of 2026-04-20** · Phase 0, 1, 2 complete (Tasks 1–19). 53 tests, 0 failures. CI green. Repo: [github.com/yingjialong/SliceAI](https://github.com/yingjialong/SliceAI) (public, MIT).
+
+### Completed tasks
+
+| Phase | Task | Commit(s) | Notes |
+|---|---|---|---|
+| 0 | 1 SPM scaffold | `04de4a6` | |
+| 0 | 2 Package.swift (7 targets) | `5ed2abf` | Dropped `InferSendableFromCaptures` (default in Swift 6) |
+| 0 | 3 Lint config | `c4d0ce5` | `AllPublicDeclarationsHaveDocumentation` later set to `false` during Task 7 review |
+| 0 | 4 CI workflow | `0ef8944` | `macos-latest` runner, Xcode 26 |
+| 0 | 5 README + LICENSE | `30f8068` | |
+| 1 | 6 SelectionPayload | `c848fd7` | Added `import CoreGraphics` (CGPoint Codable) |
+| 1 | 7 ChatTypes | `84cf8b8` · review fix `f1b043b` | swift-format config toggle + ChatChunk rationale + FinishReason test + `XCTUnwrap` |
+| 1 | 8 Tool + Provider + DisplayMode | `1edb71a` | |
+| 1 | 9 Configuration + JSON schema | `de23def` | `config.schema.json` at repo root |
+| 1 | 10 PromptTemplate | `c4021b8` · **user-review fix** `97c4f61` | Regex widened to `[^\s{}]+` to accept Unicode / dot / arbitrary config keys |
+| 1 | 11 SliceError hierarchy | `b090b09` · review fix `12ec615` | **Critical**: redact payloads in `developerContext` (API keys / response bodies); **Important**: `rateLimited` rounding + `.isFinite` guard |
+| 1 | 12 DI protocols | `291aeba` | `any Error` applied (`ExistentialAny`) |
+| 1 | 13 DefaultConfiguration | `b558646` | 4 built-in tools: Translate / Polish / Summarize / Explain |
+| 1 | 14 ToolExecutor actor | `828eb1b` · **user-review fix** `eded952` | Look up Keychain via `Provider.apiKeyRef` (derived `keychainAccount`), not `provider.id` |
+| 1 | 15 Coverage review | `13da307` | SliceCore line coverage **100%** (36 tests) |
+| 2 | 16 SSE Decoder | `734d3c5` · review fix `8c006df` | **Critical**: removed debug `print` (spec §9.3). Added CRLF tolerance. |
+| 2 | 17 OpenAI DTOs | `75177ac` · CI fix `c8887b7` | Flattened nested types to file-scope (`OpenAIStreamChoice` / `Delta`) for SwiftLint `nesting` rule |
+| 2 | 18 OpenAICompatibleProvider + MockURLProtocol | `6326610` | **Plan deviation (validated)**: `URLSession.AsyncBytes.lines` strips blank lines → breaks SSE; switched to byte-by-byte reading |
+| 2 | 19 OpenAIProviderFactory | `efd31b6` | |
+| — | CI lint fix (post-Task 15) | `35c3a2c` | Sorted imports + line length in `DefaultConfiguration.swift` / `SelectionPayload.swift` |
+
+### Issues resolved during implementation
+
+**Reviewer-flagged (subagent two-stage review):**
+
+| Severity | Task | Issue | Fix |
+|---|---|---|---|
+| Critical | 11 | `developerContext` leaked full payload via Swift reflection | `12ec615` |
+| Important | 11 | `rateLimited` `Int(t)` truncated subsecond; no `.isFinite` guard | `12ec615` |
+| Critical | 16 | `print` statements violated spec §9.3 (no redaction, not DEBUG-gated) | `8c006df` |
+
+**User-review-flagged (P2):**
+
+| # | File | Bug | Fix |
+|---|---|---|---|
+| 1 | `PromptTemplate.swift` | Regex accepted only ASCII identifiers; config allowed any key → `{{语言}}` silently passed through | `97c4f61` |
+| 2 | `ToolExecutor.swift` | Keychain lookup used `provider.id` ignoring `Provider.apiKeyRef` → silent `.unauthorized` on provider rename or shared-key setups | `eded952` |
+
+**CI-surfaced (SwiftLint `--strict` only, not local):**
+
+- Line length > 120 on 4 prompt strings in `DefaultConfiguration.swift` → `35c3a2c`
+- Imports out of order in `SelectionPayload.swift` → `35c3a2c`
+- Nesting depth > 1 in `OpenAIDTOs.swift` → `c8887b7`
+
+### Lessons that should propagate to remaining tasks (20–43)
+
+1. **No `print` in library code** — use `os.Logger` behind `#if DEBUG` if needed; redact payload lengths for anything that may carry selection / API key / response body
+2. **Line length ≤ 120** — SwiftLint strict CI fails otherwise; long strings → `+` concat or multi-line `"""`
+3. **Types nested ≤ 1 level** — put `CodingKeys` inside file-scope types, not doubly-nested
+4. **`URLSession.AsyncBytes.lines` drops blank lines** — unsafe for SSE; read bytes and split on `\n` manually
+5. **`any Error` / `any Protocol`** — strict concurrency + `ExistentialAny` feature require the `any` keyword everywhere the type is existential
+6. **Tests should assert wire format**, not just Equatable round-trip (flagged in Task 8 review; acted on in later tasks via `XCTAssertTrue(json.contains("..."))` patterns)
+
+### Pending
+
+Tasks 20–43 covering Phase 3 (SelectionCapture) through Phase 9 (Release). Not started. See phase headings below.
 
 ---
 
 ## Phase 0 — Project Bootstrap
+
+> ✅ **Completed** — Tasks 1–5, commits `04de4a6` → `30f8068`. SPM + CI + lint + README/LICENSE in place.
 
 ### Task 1: Initialize Swift Package
 
@@ -443,6 +512,8 @@ git commit -m "docs: add README and MIT LICENSE"
 ---
 
 ## Phase 1 — SliceCore Domain Layer
+
+> ✅ **Completed** — Tasks 6–15 + 2 review fixes + 2 user-review fixes. Commits `c848fd7` → `13da307` (with follow-up `97c4f61`, `eded952`). SliceCore line coverage **100%**, 36 tests.
 
 Phase goal: all domain types, protocols, and the `ToolExecutor` actor fully implemented with ≥ 90% test coverage.
 
@@ -1751,6 +1822,8 @@ git add -A && git commit -m "chore: remove SliceCoreTests marker" || true
 ---
 
 ## Phase 2 — LLMProviders
+
+> ✅ **Completed** — Tasks 16–19 + 1 review fix + 2 CI fixes. Commits `734d3c5` → `efd31b6` (with `8c006df`, `c8887b7`, `35c3a2c`). 53 tests, CI green on `main`.
 
 ### Task 16: SSE Decoder
 
