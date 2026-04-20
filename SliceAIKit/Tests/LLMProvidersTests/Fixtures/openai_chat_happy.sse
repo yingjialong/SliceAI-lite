@@ -1,0 +1,8 @@
+data: {"id":"c","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"}}]}
+
+data: {"id":"c","object":"chat.completion.chunk","choices":[{"delta":{"content":" World"}}]}
+
+data: {"id":"c","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
