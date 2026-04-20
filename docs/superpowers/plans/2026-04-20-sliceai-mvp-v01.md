@@ -100,16 +100,16 @@ SliceAI/
 
 - ✅ **M1 — Project green (end of Phase 0)** — reached at `30f8068` (2026-04-20). SPM builds clean, CI defined, README/LICENSE in place.
 - ✅ **M2 — Testable core (end of Phase 2)** — reached at `efd31b6` (2026-04-20); hardened at `b1ac4c3` after user P1/P2 review. **56 tests** passing, CI green on `main`, `OpenAICompatibleProvider.stream()` surfaces SSE parse errors and retries 429 once (spec §7.2).
-- ⏳ **M3 — Input stack (end of Phase 4)**: Selection capture + hotkeys have unit tests + manual smoke verification
-- ⏳ **M4 — UI stack (end of Phase 7)**: All three NSPanels render; Settings GUI works with sample config
-- ⏳ **M5 — Integrated app (end of Phase 8)**: Full app runs end-to-end: select text → toolbar → click tool → LLM streams result
-- ⏳ **M6 — Shippable (end of Phase 9)**: `SliceAI-0.1.0.dmg` built by CI, installs on fresh Mac
+- ✅ **M3 — Input stack (end of Phase 4)** — reached at `400feec` → `804010f` (2026-04-20). 67 tests passing. `SelectionCapture` (AX + Clipboard fallback with orchestrator), `HotkeyManager` (Hotkey parser + Carbon Registrar) landed.
+- ✅ **M4 — UI stack (end of Phase 7)** — reached at `4b4de43` (2026-04-20). 75 tests passing. `Windowing` (5 files), `Permissions` (monitor + onboarding), `SettingsUI` (Keychain + ConfigurationStore + 5 SwiftUI files) all clean under Swift 6 strict concurrency.
+- ⏳ **M5 — Integrated app (end of Phase 8)**: Full app runs end-to-end. Swift sources + plist + entitlements landed (`fbdc3da` / `bc83608`); **awaits user's Xcode GUI steps (Task 37) + smoke test (Task 40)**.
+- ⏳ **M6 — Shippable (end of Phase 9)**: `SliceAI-0.1.0.dmg` built by CI. `scripts/build-dmg.sh` (`662a993`) + `.github/workflows/release.yml` (`7b33145`) landed; **awaits user's tag push (Task 43)**.
 
 ---
 
 ## Completion Log
 
-> **Status as of 2026-04-20** · Phase 0, 1, 2 complete (Tasks 1–19). 53 tests, 0 failures. CI green. Repo: [github.com/yingjialong/SliceAI](https://github.com/yingjialong/SliceAI) (public, MIT).
+> **Status as of 2026-04-20 (session 2)** · Phase 0–7 complete (Tasks 1–36). Phase 8 code artifacts in place (Tasks 38–39); Task 37 (Xcode GUI) and Task 40 (smoke test) are **manual user work**. Phase 9 scripts landed (Tasks 41–42); Task 43 (tag v0.1.0) is **manual user work**. **75 tests, 0 failures.** CI green. Repo: [github.com/yingjialong/SliceAI](https://github.com/yingjialong/SliceAI) (public, MIT).
 
 ### Completed tasks
 
@@ -136,6 +136,30 @@ SliceAI/
 | 2 | 19 OpenAIProviderFactory | `efd31b6` | |
 | — | CI lint fix (post-Task 15) | `35c3a2c` | Sorted imports + line length in `DefaultConfiguration.swift` / `SelectionPayload.swift` |
 | 2 | 16–18 user-review fix | `b1ac4c3` | **P1**: `decodeChunk` now throws `.sseParseError` on JSON failure / error payload / truncated data (was silently dropped); **P2**: 429 now retries once with backoff (`min(Retry-After, 5s)`) per spec §7.2; 3 tests added (`retriesOnce_thenFailsIfStillRateLimited`, `retriesOnce_thenSucceeds`, `malformedJSONInData_throwsSSEParseError`, `serverErrorPayloadInData_throwsSSEParseError`); 1 removed; +2 fixtures |
+| 3 | 20 SelectionSource + Pasteboard | `6683fa8` · follow-up `c2a4e20` | `@unchecked Sendable` on `SystemPasteboard` (NSPasteboard not Sendable in AppKit); reviewer Important #1 (SystemPasteboard init permitting non-singleton NSPasteboard) addressed by updated rationale comment |
+| 3 | 21 ClipboardSelectionSource + tests | `ecbc677` | `FakePasteboard` + `FakeCopyInvoker` test doubles; 2 tests (round-trip, timeout). Reviewer flagged narrow race (clipboard clobbered between ⌘C and restore) — deferred as known limitation (probability low in mouseUp-triggered flow) |
+| 3 | 22 SystemCopyKeystrokeInvoker | `d9f2884` · review fix `8992b76` | **Important**: replaced silent `return` on `CGEvent` nil with `throw CopyKeystrokeError.eventCreationFailed`; removed unused `import AppKit` |
+| 3 | 23 AXSelectionSource | `8fffa69` | AX + browser URL detection (Safari/Chromium family). No unit tests (live AX required). |
+| 3 | 24 SelectionService orchestrator + tests | `ef08a9d` | **Plan deviation (validated)**: plan's `capture()` had double-optional bug (`try? await fn() -> T??` with `if let` unwrapping one layer only), would cause `test_fallsBackWhenPrimaryReturnsNil` to fail; refactored to private `tryCapture(from:)` helper with explicit `do/try/if let`. 4 tests green. |
+| 4 | 25 Hotkey struct + parser + tests | `d957025` | **Plan deviation (validated)**: plan's `Dictionary(uniqueKeysWithValues:)` trapped at runtime because `"escape"` and `"esc"` both map to keyCode 53 → duplicate key; replaced with `Dictionary(_, uniquingKeysWith:)` with lexicographic tiebreak. 5 tests green. |
+| 4 | 26 HotkeyRegistrar (Carbon) | `400feec` · review fix `804010f` | **Critical** (reviewer): removed 3 NSLog calls per Task 16 "no-free-logging" precedent. `deinit` order swapped (RemoveEventHandler before UnregisterEventHotKey) for correctness. No unit tests (Carbon global state). |
+| 5 | 27 ScreenAwarePositioner + tests | `ffafdfb` | Pure-geometry. 4 tests (below/flip-up/clamp-left/clamp-right). |
+| 5 | 28 PanelStyle + PanelColors | `0c52358` | Both enums `@MainActor` annotated (pre-emptive — NSColor not Sendable under Swift 6). |
+| 5 | 29 FloatingToolbarPanel | `49bac3a` | `Task { @MainActor [weak self] in ... }` for auto-dismiss (avoids `MainActor.run` hop). |
+| 5 | 30 CommandPalettePanel | `92fd3c9` | onKeyPress up/down/return/escape; `.titled`/`.closable` style mask with hidden title bar. |
+| 5 | 31 ResultPanel + StreamingMarkdownView | `832172d` | **Plan improvement**: `BlinkingCursor` switched from `Timer` to `Task { @MainActor }` loop with `onDisappear` cancel — leak-free + Swift 6 friendly. |
+| 6 | 32 AccessibilityMonitor | `9011e51` | **Plan workaround**: `kAXTrustedCheckOptionPrompt` imported as non-Sendable global in Swift 6; replaced with hardcoded `"AXTrustedCheckOptionPrompt" as CFString` (ABI-stable since macOS 10.9). |
+| 6 | 33 OnboardingFlow | `c04f8cb` | 3-step SwiftUI view; consumes `AccessibilityMonitor`. |
+| 7 | 34 KeychainStore | `3f1aec4` | `SecItemCopyMatching/Add/Update/Delete` wrapper; conforms to `KeychainAccessing`. |
+| 7 | 35 FileConfigurationStore (in SliceCore/) + tests | `1b749c0` | Moved into SliceCore/ per plan (AppKit-free). 4 tests. **Added `os.Logger`** (not `print`/`NSLog`) with `privacy: .public` markers — within Task 16 convention (`os.Logger` is OK, only `print`/`NSLog` forbidden). |
+| 7 | 36 SettingsScene + 4 editor files | `4b4de43` | 5 files, all ≤ 300 lines. `@Sendable` on async closures; `[weak self]` on Task in `SettingsViewModel.init`; `@ToolbarContentBuilder` for toolbar correctness. |
+| 8 | 38 App shell Swift files | `fbdc3da` | `SliceAIApp/{AppContainer,AppDelegate,MenuBarController,SliceAIApp}.swift`. Typechecked against compiled SPM modules via `swiftc -typecheck -strict-concurrency=complete`. NSLog removed per Task 26 precedent. |
+| 8 | 39 Info.plist + entitlements | `bc83608` | `LSUIElement=true`, AX/AppleEvents usage descriptions, app-sandbox=false, cs.disable-library-validation=true. `plutil -lint` clean. |
+| 9 | 41 build-dmg.sh | `662a993` | Unsigned DMG; Xcode + project existence checks + PROJECT_ROOT detection added for robustness. |
+| 9 | 42 release.yml | `7b33145` | Triggers on `v*` tags; `softprops/action-gh-release@v2` draft release with SHA256 in body. |
+| **Pending (user)** | 37 | — | Manual Xcode GUI: File → New → Project → macOS App → SliceAI. See handoff doc below. |
+| **Pending (user)** | 40 | — | Manual smoke test after Task 37. See handoff doc below. |
+| **Pending (user)** | 43 | — | `git tag v0.1.0 && git push origin v0.1.0`. See handoff doc below. |
 
 ### Issues resolved during implementation
 
@@ -171,9 +195,44 @@ SliceAI/
 5. **`any Error` / `any Protocol`** — strict concurrency + `ExistentialAny` feature require the `any` keyword everywhere the type is existential
 6. **Tests should assert wire format**, not just Equatable round-trip (flagged in Task 8 review; acted on in later tasks via `XCTAssertTrue(json.contains("..."))` patterns)
 
-### Pending
+### Issues resolved during implementation (session 2, Tasks 20–42)
 
-Tasks 20–43 covering Phase 3 (SelectionCapture) through Phase 9 (Release). Not started. See phase headings below.
+**Plan bugs caught during implementation (validated deviations):**
+
+| # | Task | Plan snippet issue | Fix |
+|---|---|---|---|
+| 1 | 24 SelectionService | `capture()` used `try? await primary.readSelection()` with `if let result = ...`, but `try?` on a `throws -> T?` produces `T??`; `if let` unwraps only the outer layer so `.some(nil)` entered the body and short-circuited fallback; `test_fallsBackWhenPrimaryReturnsNil` would fail. | Refactored to private `tryCapture(from:)` helper with explicit `do/try/if let`. In-file comment documents the trap. |
+| 2 | 25 Hotkey parser | `nameForKeyCode = Dictionary(uniqueKeysWithValues: keyCodeMap.map { ($0.value, $0.key) })` traps at first use: `"escape"` and `"esc"` both map to 53 → duplicate KEY in the reversed dict → `Fatal error: Duplicate values for key: '53'`. Triggered by `test_descriptionRoundTrip`. | Switched to `Dictionary(_, uniquingKeysWith: { $0 < $1 ? $0 : $1 })` — lexicographically smaller wins ("esc" for 53). Stable across runs. |
+| 3 | 32 AccessibilityMonitor | `kAXTrustedCheckOptionPrompt.takeRetainedValue()` imported as `CFString` (not `Unmanaged<CFString>`) on modern SDKs and flagged non-Sendable by Swift 6 strict concurrency. `.takeRetainedValue()` is also semantically wrong for plain imports. | Replaced with hardcoded `"AXTrustedCheckOptionPrompt" as CFString` (ABI-stable since macOS 10.9). In-file comment explains. |
+
+**Reviewer-flagged (session 2):**
+
+| Severity | Task | Issue | Fix |
+|---|---|---|---|
+| Important | 20 | `SystemPasteboard.init` allowed injecting non-singleton pasteboards while comment claimed `@unchecked Sendable` is safe only for `.general` singleton | `c2a4e20` — rationale comment updated to reflect caller responsibility for non-singleton pasteboards |
+| Important | 22 | `sendCopy()` silently returned on `CGEvent` creation failure; caller couldn't distinguish sent vs dropped | `8992b76` — added `CopyKeystrokeError.eventCreationFailed` throw path; dropped unused AppKit import |
+| Critical | 26 | 3 `NSLog` calls violated codebase's "no free logging" convention established by Task 16 `8c006df` (NSLog is equivalent to print for release — always-on, not privacy-aware) | `804010f` — removed all NSLog; lifecycle comments retained |
+
+**Swift 6 strict-concurrency adjustments applied proactively (all non-semantic):**
+
+- `AccessibilityMonitor.requestTrust`: hardcoded string (above) to avoid non-Sendable global.
+- `PanelStyle` / `PanelColors`: annotated `@MainActor` to scope NSColor access (non-Sendable) to main actor.
+- `FloatingToolbarPanel` auto-dismiss `Task`: `@MainActor` isolation instead of nested `MainActor.run`.
+- `StreamingMarkdownView.BlinkingCursor`: `Timer` → `Task { @MainActor while !Task.isCancelled }` loop with `onDisappear` cancel (leak-free + strict-concurrency-clean).
+- `SettingsViewModel.init`: `[weak self]` on the Task that calls `reload()`.
+- `ProviderEditorView` async closures: `@Sendable` added to `onSaveKey`/`onLoadKey`.
+- `AppContainer.focusProvider` closure: `MainActor.assumeIsolated { ... }` wrapper since body touches `NSWorkspace.shared.frontmostApplication` (main-actor-only) but closure itself must be `@Sendable` per `ClipboardSelectionSource`'s init signature.
+- `AppDelegate.installMouseMonitor`: global event monitor callback hops via `Task { @MainActor in ... }` to satisfy strict concurrency.
+
+### Pending (handed back to user)
+
+Only three items remain, all requiring hands-on steps that cannot be automated:
+
+- **Task 37 — Create Xcode project** (GUI-only)
+- **Task 40 — End-to-end smoke test** (live app launch + manual verification)
+- **Task 43 — Tag v0.1.0** (git tag + push)
+
+See the "Handoff to user" section at the end of this document for detailed walk-through.
 
 ---
 
@@ -5231,6 +5290,90 @@ git push origin v0.1.0
 - SSE format variance: Task 20 fixtures cover OpenAI; add DeepSeek / Moonshot fixtures in v0.1.x if user reports
 - `SliceAI` name duplication on GitHub: grep before pushing to origin
 - Accessibility permission polling: implemented in Task 32 as 1s timer (acceptable for MVP)
+
+---
+
+## Handoff to user (Tasks 37 / 40 / 43)
+
+Three remaining items all require hands-on work. Each has a precise recipe below.
+
+### Task 37 — Create the Xcode project
+
+The `SliceAIApp/` directory already contains all 4 Swift sources + `Info.plist` + `SliceAI.entitlements`. You need to wrap them in an Xcode App target and link the local SPM.
+
+**Prerequisite:** Xcode 26 installed at `/Applications/Xcode_26.app` (matches `release.yml`). Adjust the path in `release.yml` if you use a different Xcode version.
+
+**Steps:**
+
+1. Open Xcode → File → New → Project → **macOS → App** → Next
+2. Product Name: `SliceAI` · Team: **None** (unsigned MVP) · Organization Identifier: `com.sliceai` · Bundle ID will auto-fill as `com.sliceai.SliceAI` · Interface: **SwiftUI** · Language: **Swift** · Uncheck *Core Data* and *Include Tests*.
+3. Save location: `/Users/majiajun/workspace/SliceAI/` → **Uncheck "Create Git repository"** (already exists).
+4. Xcode creates a `SliceAI/` source folder. **Rename** it to `SliceAIApp` (both in Finder and in Xcode's navigator) so it matches existing files.
+5. **Delete** the auto-generated `SliceAIApp.swift` and `ContentView.swift` inside `SliceAIApp/` — replace references with the 4 existing Swift files (`AppContainer.swift`, `AppDelegate.swift`, `MenuBarController.swift`, `SliceAIApp.swift`). Drag them into the project navigator if Xcode didn't pick them up automatically.
+6. Target → General → **Minimum Deployments → macOS 14.0**.
+7. Target → Info → replace auto-generated Info.plist with the existing `SliceAIApp/Info.plist` (or copy its keys in).
+8. Target → Signing & Capabilities → **App Sandbox: OFF** + **Hardened Runtime: ON** + **Disable Library Validation: ON**. If Xcode generated a different `.entitlements` path, replace it with `SliceAIApp/SliceAI.entitlements` (the one this plan pre-committed).
+9. File → Add Package Dependencies → **Add Local…** → select `/Users/majiajun/workspace/SliceAI/SliceAIKit/` → Add all 7 library products (`SliceCore`, `LLMProviders`, `SelectionCapture`, `HotkeyManager`, `Windowing`, `Permissions`, `SettingsUI`) to the `SliceAI` target.
+10. Target → Build Settings → set **Swift Language Version = Swift 6**, enable **StrictConcurrency=complete**, **ExistentialAny**. (These match the SPM's `swiftSettings`.)
+11. Build & run (⌘R). The app should launch menu-bar-only (LSUIElement).
+12. Commit:
+    ```bash
+    cd /Users/majiajun/workspace/SliceAI
+    git add SliceAI.xcodeproj/
+    git commit -m "chore: create Xcode app project and link SliceAIKit local package"
+    ```
+
+**Common pitfalls:**
+- Build errors "No such module 'SliceCore'" → the Package wasn't attached to the target. Step 9.
+- "Operation not permitted" on launch → App Sandbox is still ON. Step 8.
+- SwiftUI `@main` complains about missing NSApplicationDelegateAdaptor → make sure you deleted the auto-generated `SliceAIApp.swift` and kept the pre-committed one.
+
+### Task 40 — Smoke test
+
+After Task 37 builds, run this checklist. **If anything fails, debug before moving on**.
+
+- [ ] **1. First launch**: OnboardingFlow appears. Click "开始" → accessibility step visible.
+- [ ] **2. Grant permission**: Click "打开辅助功能设置" → System Settings opens at Privacy → Accessibility. Add SliceAI → toggle ON. Onboarding panel updates to "已授予" (may need to click into it).
+- [ ] **3. API key**: Click "下一步" → enter OpenAI API key → click "完成". Keychain write should succeed silently.
+- [ ] **4. Menu-bar icon**: Scissors ✂️ icon appears in the menu bar. Click → menu shows `SliceAI` / `Settings…` / `Quit`.
+- [ ] **5. Floating toolbar (A)**: In Safari / Notes / Preview / Xcode, select 5+ Chinese characters. Within 200 ms a floating toolbar with 4 icons appears below the selection. Click **🌐 Translate** → `ResultPanel` opens top-right, streams Markdown. Close it.
+- [ ] **6. Command palette (C)**: Press **⌥Space** → central command palette appears. If text was selected, preview shows at top. Up/Down arrows navigate; Enter runs the highlighted tool; Esc dismisses.
+- [ ] **7. Electron / Cmd+C fallback**: Try VSCode, Slack, Figma. AX usually fails → Clipboard fallback should kick in (200-400 ms delay is fine). Tool still runs.
+- [ ] **8. Settings window**: Menu bar → Settings → Tools / Providers / Hotkeys / Triggers tabs work. Add a new Tool; change hotkey to `cmd+shift+j` → close Settings → verify new hotkey wakes the palette.
+- [ ] **9. Error path**: Temporarily break the API key (set to `sk-invalid`) → run Translate → ResultPanel should show a red banner with the user-facing error message and the "重试" / "复制错误详情" buttons.
+
+Commit any bug fixes discovered:
+```bash
+git add -A
+git commit -m "fix(app): address issues found during first smoke run"
+```
+
+### Task 43 — Tag v0.1.0 and release
+
+1. Make sure SPM is green:
+   ```bash
+   cd /Users/majiajun/workspace/SliceAI/SliceAIKit && swift test
+   ```
+   Expected: 75 tests pass.
+2. Dry-run the release script (optional — requires Task 37 done):
+   ```bash
+   cd /Users/majiajun/workspace/SliceAI
+   scripts/build-dmg.sh 0.1.0-rc
+   ```
+   Expected: `build/SliceAI-0.1.0-rc.dmg` created. Mount it, verify the app launches on a *different* user account or a fresh Mac.
+3. Push main + tag:
+   ```bash
+   cd /Users/majiajun/workspace/SliceAI
+   git push origin main
+   git tag v0.1.0 -m "Release v0.1.0: MVP"
+   git push origin v0.1.0
+   ```
+4. Watch GitHub Actions → the `Release` workflow triggers. Wait for it to go green. A **draft** GitHub Release appears with the DMG attached.
+5. Review the auto-generated release notes. Verify SHA256 matches (workflow includes it in the release body). Click **Publish release**.
+
+**If something in the release workflow fails:**
+- `Xcode_26.app not found` → update the `sudo xcode-select -s` path in `.github/workflows/release.yml` to match the GitHub runner's current Xcode version.
+- `xcodebuild archive` fails → usually a code-sign issue. The script passes `CODE_SIGN_IDENTITY=""` / `CODE_SIGNING_REQUIRED=NO` — if Xcode still tries to sign, add the target to the workflow step and explicitly pass the same flags via `-xcconfig` or environment.
 
 ---
 
