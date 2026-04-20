@@ -172,6 +172,66 @@ final class ToolExecutorTests: XCTestCase {
         }
     }
 
+    func test_execute_usesApiKeyRefAccount_notProviderId() async throws {
+        // provider.id 与 apiKeyRef 指向的 account 不同时，应按 apiKeyRef 读取
+        var cfg = DefaultConfiguration.initial()
+        cfg.providers[0] = Provider(
+            id: "renamed-provider",        // 新 id
+            name: "OpenAI",
+            baseURL: URL(string: "https://api.openai.com/v1")!,  // swiftlint:disable:this force_unwrapping
+            apiKeyRef: "keychain:legacy-account",   // 仍指向旧 account
+            defaultModel: "gpt-5"
+        )
+        cfg.tools[0].providerId = "renamed-provider"
+
+        let keychain = FakeKeychain([
+            "legacy-account": "sk-found",     // 只在旧 account 存在
+            "renamed-provider": ""             // 新 id 下故意为空
+        ])
+
+        let factory = CapturingFactory()
+        let exec = ToolExecutor(
+            configurationProvider: FakeConfig(cfg),
+            providerFactory: factory,
+            keychain: keychain
+        )
+        let payload = SelectionPayload(
+            text: "x", appBundleID: "", appName: "", url: nil,
+            screenPoint: .zero, source: .accessibility, timestamp: Date()
+        )
+        let stream = try await exec.execute(tool: cfg.tools[0], payload: payload)
+        for try await _ in stream {}
+        XCTAssertEqual(factory.box.capturedKey, "sk-found")
+    }
+
+    func test_execute_unsupportedApiKeyRefScheme_throwsUnauthorized() async {
+        var cfg = DefaultConfiguration.initial()
+        cfg.providers[0] = Provider(
+            id: "openai-official",
+            name: "OpenAI",
+            baseURL: URL(string: "https://api.openai.com/v1")!,  // swiftlint:disable:this force_unwrapping
+            apiKeyRef: "env:OPENAI_API_KEY",   // 当前不支持的 scheme
+            defaultModel: "gpt-5"
+        )
+        let exec = ToolExecutor(
+            configurationProvider: FakeConfig(cfg),
+            providerFactory: FakeFactory(chunks: []),
+            keychain: FakeKeychain(["openai-official": "sk-anything"])
+        )
+        let payload = SelectionPayload(
+            text: "x", appBundleID: "", appName: "", url: nil,
+            screenPoint: .zero, source: .accessibility, timestamp: Date()
+        )
+        do {
+            _ = try await exec.execute(tool: cfg.tools[0], payload: payload)
+            XCTFail("should have thrown")
+        } catch SliceError.provider(.unauthorized) {
+            // OK: 非 keychain: 前缀按未授权处理
+        } catch {
+            XCTFail("unexpected: \(error)")
+        }
+    }
+
     /// 验证当 Tool.providerId 在 Configuration.providers 中找不到时抛配置错误
     func test_execute_unknownProvider_throws() async {
         var cfg = DefaultConfiguration.initial()

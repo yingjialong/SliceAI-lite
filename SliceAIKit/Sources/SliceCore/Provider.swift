@@ -23,4 +23,13 @@ public struct Provider: Identifiable, Sendable, Codable, Equatable {
         self.apiKeyRef = apiKeyRef
         self.defaultModel = defaultModel
     }
+
+    /// apiKeyRef 使用的 scheme 前缀；未来扩展 env: / file: 时在此枚举
+    public static let keychainRefPrefix = "keychain:"
+
+    /// 解析 apiKeyRef 得到 Keychain 中的 account 名；非 keychain: 前缀返回 nil
+    public var keychainAccount: String? {
+        guard apiKeyRef.hasPrefix(Self.keychainRefPrefix) else { return nil }
+        return String(apiKeyRef.dropFirst(Self.keychainRefPrefix.count))
+    }
 }

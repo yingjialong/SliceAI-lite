@@ -51,8 +51,12 @@ public actor ToolExecutor {
             throw SliceError.configuration(.referencedProviderMissing(tool.providerId))
         }
 
-        // 2. 从 Keychain 读取 API Key；空字符串或 nil 都视为未授权
-        guard let apiKey = try await keychain.readAPIKey(providerId: provider.id),
+        // 2. 优先按 Provider.apiKeyRef（形如 "keychain:<account>"）解析 Keychain 账户
+        //    非 keychain: 前缀（未来可能支持 env: 等）或空值一律按未授权处理
+        guard let account = provider.keychainAccount else {
+            throw SliceError.provider(.unauthorized)
+        }
+        guard let apiKey = try await keychain.readAPIKey(providerId: account),
               !apiKey.isEmpty else {
             throw SliceError.provider(.unauthorized)
         }
