@@ -17,17 +17,45 @@ public enum SliceError: Error, Sendable, Equatable {
         }
     }
 
-    /// 用于日志打印的开发者上下文，不含敏感信息
+    /// 用于日志打印的开发者上下文
+    /// 对携带任意字符串 payload 的 case 做脱敏，防止 API Key / 响应体 / JSON 原文流入日志
     public var developerContext: String {
         switch self {
-        case .selection(let e): return "selection.\(e)"
-        case .provider(let e): return "provider.\(e)"
-        case .configuration(let e): return "configuration.\(e)"
-        case .permission(let e): return "permission.\(e)"
+        case .selection(let e):
+            switch e {
+            case .axUnavailable: return "selection.axUnavailable"
+            case .axEmpty: return "selection.axEmpty"
+            case .clipboardTimeout: return "selection.clipboardTimeout"
+            case .textTooLong(let n): return "selection.textTooLong(\(n))"
+            }
+        case .provider(let e):
+            switch e {
+            case .unauthorized: return "provider.unauthorized"
+            case .rateLimited(let t):
+                let s = t.flatMap { $0.isFinite ? String(Int(max(0, $0.rounded(.up)))) : nil } ?? "nil"
+                return "provider.rateLimited(\(s))"
+            case .serverError(let code): return "provider.serverError(\(code))"
+            case .networkTimeout: return "provider.networkTimeout"
+            case .invalidResponse: return "provider.invalidResponse(<redacted>)"
+            case .sseParseError: return "provider.sseParseError(<redacted>)"
+            }
+        case .configuration(let e):
+            switch e {
+            case .fileNotFound: return "configuration.fileNotFound"
+            case .schemaVersionTooNew(let v): return "configuration.schemaVersionTooNew(\(v))"
+            case .invalidJSON: return "configuration.invalidJSON(<redacted>)"
+            case .referencedProviderMissing(let id): return "configuration.referencedProviderMissing(\(id))"
+            }
+        case .permission(let e):
+            switch e {
+            case .accessibilityDenied: return "permission.accessibilityDenied"
+            case .inputMonitoringDenied: return "permission.inputMonitoringDenied"
+            }
         }
     }
 }
 
+/// 选中文字捕获环节的错误
 public enum SelectionError: Error, Sendable, Equatable {
     case axUnavailable
     case axEmpty
@@ -44,6 +72,7 @@ public enum SelectionError: Error, Sendable, Equatable {
     }
 }
 
+/// LLM 供应商调用环节的错误
 public enum ProviderError: Error, Sendable, Equatable {
     case unauthorized
     case rateLimited(retryAfter: TimeInterval?)
@@ -57,7 +86,10 @@ public enum ProviderError: Error, Sendable, Equatable {
         case .unauthorized:
             return "API Key 无效或未设置，请在设置中检查。"
         case .rateLimited(let t):
-            if let t { return "请求过于频繁，请 \(Int(t)) 秒后重试。" }
+            if let t, t.isFinite, t > 0 {
+                let secs = max(1, Int(t.rounded(.up)))
+                return "请求过于频繁，请 \(secs) 秒后重试。"
+            }
             return "请求过于频繁，请稍后重试。"
         case .serverError(let code):
             return "服务端返回错误（HTTP \(code)），请稍后重试或切换模型。"
@@ -71,6 +103,7 @@ public enum ProviderError: Error, Sendable, Equatable {
     }
 }
 
+/// 配置加载/校验环节的错误
 public enum ConfigurationError: Error, Sendable, Equatable {
     case fileNotFound
     case schemaVersionTooNew(Int)
@@ -91,6 +124,7 @@ public enum ConfigurationError: Error, Sendable, Equatable {
     }
 }
 
+/// 系统权限相关错误
 public enum PermissionError: Error, Sendable, Equatable {
     case accessibilityDenied
     case inputMonitoringDenied
