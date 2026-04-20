@@ -88,7 +88,6 @@ public final class HotkeyRegistrar: @unchecked Sendable {
         // 注册成功后记录映射，后续事件分发与注销都依赖这两张表
         refByID[id] = ref
         callbackByID[id] = callback
-        NSLog("[HotkeyRegistrar] registered id=%u hotkey=%@", id, String(describing: hotkey))
         return id
     }
 
@@ -96,7 +95,6 @@ public final class HotkeyRegistrar: @unchecked Sendable {
     public func unregister(_ id: UInt32) {
         if let ref = refByID.removeValue(forKey: id) {
             UnregisterEventHotKey(ref)
-            NSLog("[HotkeyRegistrar] unregistered id=%u", id)
         }
         callbackByID.removeValue(forKey: id)
     }
@@ -107,10 +105,8 @@ public final class HotkeyRegistrar: @unchecked Sendable {
         for ref in refByID.values {
             UnregisterEventHotKey(ref)
         }
-        let count = refByID.count
         refByID.removeAll()
         callbackByID.removeAll()
-        NSLog("[HotkeyRegistrar] unregisterAll cleared %d hotkeys", count)
     }
 
     // MARK: - 内部实现
