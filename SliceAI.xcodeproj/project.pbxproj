@@ -1,0 +1,463 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		533BA7882F9695D00078EF4F /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533BA7802F9695D00078EF4F /* AppContainer.swift */; };
+		533BA7892F9695D00078EF4F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533BA7812F9695D00078EF4F /* AppDelegate.swift */; };
+		533BA78A2F9695D00078EF4F /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533BA7842F9695D00078EF4F /* MenuBarController.swift */; };
+		533BA78B2F9695D00078EF4F /* SliceAIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533BA7862F9695D00078EF4F /* SliceAIApp.swift */; };
+		533BA78C2F9695D00078EF4F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 533BA7822F9695D00078EF4F /* Assets.xcassets */; };
+		533BA7912F969D310078EF4F /* HotkeyManager in Frameworks */ = {isa = PBXBuildFile; productRef = 533BA7902F969D310078EF4F /* HotkeyManager */; };
+		533BA7932F969D310078EF4F /* LLMProviders in Frameworks */ = {isa = PBXBuildFile; productRef = 533BA7922F969D310078EF4F /* LLMProviders */; };
+		533BA7952F969D310078EF4F /* Permissions in Frameworks */ = {isa = PBXBuildFile; productRef = 533BA7942F969D310078EF4F /* Permissions */; };
+		533BA7972F969D310078EF4F /* SelectionCapture in Frameworks */ = {isa = PBXBuildFile; productRef = 533BA7962F969D310078EF4F /* SelectionCapture */; };
+		533BA7992F969D310078EF4F /* SettingsUI in Frameworks */ = {isa = PBXBuildFile; productRef = 533BA7982F969D310078EF4F /* SettingsUI */; };
+		533BA79C2F969F2D0078EF4F /* SliceCore in Frameworks */ = {isa = PBXBuildFile; productRef = 533BA79B2F969F2D0078EF4F /* SliceCore */; };
+		533BA79E2F969F330078EF4F /* Windowing in Frameworks */ = {isa = PBXBuildFile; productRef = 533BA79D2F969F330078EF4F /* Windowing */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		533BA76C2F9691D20078EF4F /* SliceAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SliceAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		533BA7802F9695D00078EF4F /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
+		533BA7812F9695D00078EF4F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		533BA7822F9695D00078EF4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		533BA7842F9695D00078EF4F /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
+		533BA7852F9695D00078EF4F /* SliceAI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SliceAI.entitlements; sourceTree = "<group>"; };
+		533BA7862F9695D00078EF4F /* SliceAIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SliceAIApp.swift; sourceTree = "<group>"; };
+		533BA78E2F9699C90078EF4F /* SliceAI-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "SliceAI-Info.plist"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		533BA7692F9691D20078EF4F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				533BA7952F969D310078EF4F /* Permissions in Frameworks */,
+				533BA7912F969D310078EF4F /* HotkeyManager in Frameworks */,
+				533BA79C2F969F2D0078EF4F /* SliceCore in Frameworks */,
+				533BA7992F969D310078EF4F /* SettingsUI in Frameworks */,
+				533BA7972F969D310078EF4F /* SelectionCapture in Frameworks */,
+				533BA7932F969D310078EF4F /* LLMProviders in Frameworks */,
+				533BA79E2F969F330078EF4F /* Windowing in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		533BA7632F9691D20078EF4F = {
+			isa = PBXGroup;
+			children = (
+				533BA78E2F9699C90078EF4F /* SliceAI-Info.plist */,
+				533BA7872F9695D00078EF4F /* SliceAIApp */,
+				533BA79A2F969F2D0078EF4F /* Frameworks */,
+				533BA76D2F9691D20078EF4F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		533BA76D2F9691D20078EF4F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				533BA76C2F9691D20078EF4F /* SliceAI.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		533BA7872F9695D00078EF4F /* SliceAIApp */ = {
+			isa = PBXGroup;
+			children = (
+				533BA7802F9695D00078EF4F /* AppContainer.swift */,
+				533BA7812F9695D00078EF4F /* AppDelegate.swift */,
+				533BA7822F9695D00078EF4F /* Assets.xcassets */,
+				533BA7842F9695D00078EF4F /* MenuBarController.swift */,
+				533BA7852F9695D00078EF4F /* SliceAI.entitlements */,
+				533BA7862F9695D00078EF4F /* SliceAIApp.swift */,
+			);
+			path = SliceAIApp;
+			sourceTree = "<group>";
+		};
+		533BA79A2F969F2D0078EF4F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		533BA76B2F9691D20078EF4F /* SliceAI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 533BA7772F9691D30078EF4F /* Build configuration list for PBXNativeTarget "SliceAI" */;
+			buildPhases = (
+				533BA7682F9691D20078EF4F /* Sources */,
+				533BA7692F9691D20078EF4F /* Frameworks */,
+				533BA76A2F9691D20078EF4F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SliceAI;
+			packageProductDependencies = (
+				533BA7902F969D310078EF4F /* HotkeyManager */,
+				533BA7922F969D310078EF4F /* LLMProviders */,
+				533BA7942F969D310078EF4F /* Permissions */,
+				533BA7962F969D310078EF4F /* SelectionCapture */,
+				533BA7982F969D310078EF4F /* SettingsUI */,
+				533BA79B2F969F2D0078EF4F /* SliceCore */,
+				533BA79D2F969F330078EF4F /* Windowing */,
+			);
+			productName = SliceAI;
+			productReference = 533BA76C2F9691D20078EF4F /* SliceAI.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		533BA7642F9691D20078EF4F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					533BA76B2F9691D20078EF4F = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = 533BA7672F9691D20078EF4F /* Build configuration list for PBXProject "SliceAI" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 533BA7632F9691D20078EF4F;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				533BA78F2F969D310078EF4F /* XCLocalSwiftPackageReference "SliceAIKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 533BA76D2F9691D20078EF4F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				533BA76B2F9691D20078EF4F /* SliceAI */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		533BA76A2F9691D20078EF4F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				533BA78C2F9695D00078EF4F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		533BA7682F9691D20078EF4F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				533BA7882F9695D00078EF4F /* AppContainer.swift in Sources */,
+				533BA7892F9695D00078EF4F /* AppDelegate.swift in Sources */,
+				533BA78A2F9695D00078EF4F /* MenuBarController.swift in Sources */,
+				533BA78B2F9695D00078EF4F /* SliceAIApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		533BA7752F9691D30078EF4F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		533BA7762F9691D30078EF4F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		533BA7782F9691D30078EF4F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = SliceAIApp/SliceAI.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SliceAI-Info.plist";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SliceAI 使用 Apple 事件转发选中文字请求。";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sliceai.SliceAI;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		533BA7792F9691D30078EF4F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = NO;
+				CODE_SIGN_ENTITLEMENTS = SliceAIApp/SliceAI.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SliceAI-Info.plist";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SliceAI 使用 Apple 事件转发选中文字请求。";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sliceai.SliceAI;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		533BA7672F9691D20078EF4F /* Build configuration list for PBXProject "SliceAI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				533BA7752F9691D30078EF4F /* Debug */,
+				533BA7762F9691D30078EF4F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		533BA7772F9691D30078EF4F /* Build configuration list for PBXNativeTarget "SliceAI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				533BA7782F9691D30078EF4F /* Debug */,
+				533BA7792F9691D30078EF4F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		533BA78F2F969D310078EF4F /* XCLocalSwiftPackageReference "SliceAIKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = SliceAIKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		533BA7902F969D310078EF4F /* HotkeyManager */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HotkeyManager;
+		};
+		533BA7922F969D310078EF4F /* LLMProviders */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LLMProviders;
+		};
+		533BA7942F969D310078EF4F /* Permissions */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Permissions;
+		};
+		533BA7962F969D310078EF4F /* SelectionCapture */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SelectionCapture;
+		};
+		533BA7982F969D310078EF4F /* SettingsUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SettingsUI;
+		};
+		533BA79B2F969F2D0078EF4F /* SliceCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 533BA78F2F969D310078EF4F /* XCLocalSwiftPackageReference "SliceAIKit" */;
+			productName = SliceCore;
+		};
+		533BA79D2F969F330078EF4F /* Windowing */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 533BA78F2F969D310078EF4F /* XCLocalSwiftPackageReference "SliceAIKit" */;
+			productName = Windowing;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 533BA7642F9691D20078EF4F /* Project object */;
+}
