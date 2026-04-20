@@ -327,13 +327,13 @@ concurrency:
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.app
 
       - name: Swift version
         run: swift --version
@@ -5043,14 +5043,14 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 45
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 16
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.app
 
       - name: Extract version
         id: ver
