@@ -91,7 +91,7 @@ final class ClipboardSelectionSourceTests: XCTestCase {
         let source = ClipboardSelectionSource(
             pasteboard: pb,
             copyInvoker: FakeCopyInvoker(pb, simulate: "selected text"),
-            focusProvider: { @MainActor in
+            focusProvider: { @MainActor @Sendable in
                 FocusInfo(
                     bundleID: "com.apple.Safari",
                     appName: "Safari",
@@ -121,7 +121,7 @@ final class ClipboardSelectionSourceTests: XCTestCase {
         let source = ClipboardSelectionSource(
             pasteboard: pb,
             copyInvoker: FakeCopyInvoker(pb, simulate: nil),    // 剪贴板不变
-            focusProvider: { @MainActor in
+            focusProvider: { @MainActor @Sendable in
                 FocusInfo(bundleID: "x", appName: "x", url: nil, screenPoint: .zero)
             },
             pollInterval: 0.001,
@@ -151,7 +151,7 @@ final class ClipboardSelectionSourceTests: XCTestCase {
         let source = ClipboardSelectionSource(
             pasteboard: pb,
             copyInvoker: FakeCopyInvoker(pb, simulate: "selected"),
-            focusProvider: { @MainActor in
+            focusProvider: { @MainActor @Sendable in
                 FocusInfo(bundleID: "x", appName: "X", url: nil, screenPoint: .zero)
             },
             pollInterval: 0.001,
