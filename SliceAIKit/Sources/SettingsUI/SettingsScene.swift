@@ -125,19 +125,29 @@ public struct SettingsScene: View {
     }
 
     /// Providers 右侧编辑区：根据选中 id 渲染 ProviderEditorView 或占位
+    ///
+    /// 注意：`onSaveKey` / `onLoadKey` 闭包通过值捕获当前 `provider` 快照，
+    /// 让 Keychain 读写的 account 与 `Provider.apiKeyRef` 保持一致，
+    /// 这样写入槽位与 `ToolExecutor` 读取槽位对齐，避免 provider.id 与
+    /// `apiKeyRef` 指向的 account 不一致时出现“写入后读不到密钥”的情况。
+    ///
+    /// 值捕获的副作用：若用户在编辑器中修改 `apiKeyRef` 后立即点 Save，
+    /// 由于 SwiftUI 对 `$viewModel.configuration.providers` 的绑定改动会重建
+    /// 该分支视图与闭包，捕获到的是“最新一次渲染时”的 provider 快照，
+    /// 因此在本轮交互下是安全的。
     @ViewBuilder
     private var providersDetail: some View {
         if let id = selectedProviderID,
            let idx = viewModel.configuration.providers.firstIndex(where: { $0.id == id }) {
-            // 捕获 id 到局部常量，保证闭包中引用的是当下的选中项
-            let providerId = id
+            // 捕获 provider 值而非 id，确保闭包使用的是当下快照的 apiKeyRef
+            let provider = viewModel.configuration.providers[idx]
             ProviderEditorView(
                 provider: $viewModel.configuration.providers[idx],
-                onSaveKey: { [vm = viewModel] key in
-                    try? await vm.setAPIKey(key, for: providerId)
+                onSaveKey: { [vm = viewModel, provider] key in
+                    try? await vm.setAPIKey(key, for: provider)
                 },
-                onLoadKey: { [vm = viewModel] in
-                    (try? await vm.readAPIKey(for: providerId)) ?? nil
+                onLoadKey: { [vm = viewModel, provider] in
+                    (try? await vm.readAPIKey(for: provider)) ?? nil
                 }
             )
         } else {

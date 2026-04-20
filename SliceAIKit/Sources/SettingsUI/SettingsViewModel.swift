@@ -52,17 +52,41 @@ public final class SettingsViewModel: ObservableObject {
         try await store.update(configuration)
     }
 
-    /// 为指定 provider 写入 API Key
+    /// 为指定 Provider 写入 API Key
+    ///
+    /// Keychain 的 account 必须通过 `Provider.keychainAccount` 解析自 `apiKeyRef`，
+    /// 这样写入槽位与 `ToolExecutor.execute` 读取槽位一致，避免出现：
+    ///   - 导入的配置中 `apiKeyRef = "keychain:shared-key"`，account != provider.id；
+    ///   - 重命名 Provider（id 变化）后，旧的 `apiKeyRef` 指向的槽位仍被执行器读取，
+    ///     但 UI 层却在新 id 对应的槽位里写键，导致运行时始终拿不到密钥。
     /// - Parameters:
     ///   - key: 明文 API Key；空串语义由调用方决定
-    ///   - providerId: Provider 标识，作为 Keychain 的 account
-    public func setAPIKey(_ key: String, for providerId: String) async throws {
-        try await keychain.writeAPIKey(key, providerId: providerId)
+    ///   - provider: 目标 Provider；其 `apiKeyRef` 决定写入的 Keychain account
+    /// - Throws:
+    ///   - `SliceError.configuration(.invalidJSON)` 当 `apiKeyRef` 不是 `keychain:` 前缀
+    ///     （例如未来规划的 `env:` 方案），UI 层暂不支持写入
+    ///   - Keychain 底层的 IO/OSStatus 错误
+    public func setAPIKey(_ key: String, for provider: Provider) async throws {
+        guard let account = provider.keychainAccount else {
+            // apiKeyRef 不是 keychain: 前缀（例如将来的 env: 方案）；UI 层暂不支持写入
+            throw SliceError.configuration(
+                .invalidJSON(
+                    "Provider '\(provider.id)' uses non-keychain apiKeyRef: \(provider.apiKeyRef)"
+                )
+            )
+        }
+        try await keychain.writeAPIKey(key, providerId: account)
     }
 
-    /// 读取指定 provider 的 API Key，不存在返回 nil
-    /// - Parameter providerId: Provider 标识
-    public func readAPIKey(for providerId: String) async throws -> String? {
-        try await keychain.readAPIKey(providerId: providerId)
+    /// 读取指定 Provider 的 API Key，不存在或非 keychain 引用时返回 nil
+    ///
+    /// 与 `setAPIKey(_:for:)` 对称，通过 `Provider.keychainAccount` 解析 account，
+    /// 保证读取槽位与执行器一致。
+    /// - Parameter provider: 目标 Provider；其 `apiKeyRef` 决定读取的 Keychain account
+    /// - Returns: 明文 API Key；槽位为空或 `apiKeyRef` 非 keychain 前缀时返回 nil
+    public func readAPIKey(for provider: Provider) async throws -> String? {
+        // apiKeyRef 非 keychain: 前缀时，UI 无处可读，直接返回 nil 让 UI 回退到空态
+        guard let account = provider.keychainAccount else { return nil }
+        return try await keychain.readAPIKey(providerId: account)
     }
 }
