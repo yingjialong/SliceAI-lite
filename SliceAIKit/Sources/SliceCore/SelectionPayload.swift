@@ -1,5 +1,5 @@
-import Foundation
 import CoreGraphics
+import Foundation
 
 /// 划词事件的载荷，在 SelectionCapture 与 Windowing / ToolExecutor 之间传递
 public struct SelectionPayload: Sendable, Equatable, Codable {

@@ -51,7 +51,8 @@ public enum DefaultConfiguration {
     public static let translate = Tool(
         id: "translate", name: "Translate", icon: "🌐",
         description: "将选中文字翻译为指定语言",
-        systemPrompt: "You are a professional translator. Translate faithfully and naturally. Output only the translation without explanations.",
+        systemPrompt: "You are a professional translator. Translate faithfully and naturally. "
+                    + "Output only the translation without explanations.",
         userPrompt: "Translate the following to {{language}}:\n\n{{selection}}",
         providerId: openAIDefault.id, modelId: nil, temperature: 0.3,
         displayMode: .window,
@@ -62,7 +63,8 @@ public enum DefaultConfiguration {
     public static let polish = Tool(
         id: "polish", name: "Polish", icon: "📝",
         description: "在保持原意的前提下润色文字",
-        systemPrompt: "You are an expert editor. Polish the text while preserving the author's voice and meaning. Output only the polished version.",
+        systemPrompt: "You are an expert editor. Polish the text while preserving the author's "
+                    + "voice and meaning. Output only the polished version.",
         userPrompt: "Polish the following text:\n\n{{selection}}",
         providerId: openAIDefault.id, modelId: nil, temperature: 0.4,
         displayMode: .window,
@@ -84,8 +86,10 @@ public enum DefaultConfiguration {
     public static let explain = Tool(
         id: "explain", name: "Explain", icon: "💡",
         description: "解释专业术语或生词",
-        systemPrompt: "You are a patient teacher. Explain concepts clearly, assuming an educated but non-expert audience.",
-        userPrompt: "Explain the following in simple terms. If it's a technical term or acronym, expand and contextualize:\n\n{{selection}}",
+        systemPrompt: "You are a patient teacher. Explain concepts clearly, assuming an "
+                    + "educated but non-expert audience.",
+        userPrompt: "Explain the following in simple terms. If it's a technical term or acronym, "
+                  + "expand and contextualize:\n\n{{selection}}",
         providerId: openAIDefault.id, modelId: nil, temperature: 0.4,
         displayMode: .window,
         variables: [:]
