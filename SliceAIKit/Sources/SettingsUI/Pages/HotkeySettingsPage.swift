@@ -88,15 +88,17 @@ public struct SettingsRow<Control: View>: View {
     }
 
     public var body: some View {
-        HStack {
-            // 左侧标签：subheadline 字号，主文本色
+        HStack(spacing: SliceSpacing.lg) {
+            // 左侧标签：subheadline 字号，主文本色；固定最小宽度避免被
+            // 右侧 TextField(plain) 这类 greedy 控件挤掉，保证 label 始终可见
             Text(label)
                 .font(SliceFont.subheadline)
                 .foregroundColor(SliceColor.textPrimary)
+                .frame(minWidth: 110, alignment: .leading)
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            // 右侧控件：layoutPriority 高于 label，控件优先拿空间
+            // 右侧控件：layoutPriority 高于 label，控件优先拿剩余空间
             control()
                 .layoutPriority(1)
         }

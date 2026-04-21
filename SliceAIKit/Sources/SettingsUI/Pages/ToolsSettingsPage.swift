@@ -25,6 +25,9 @@ public struct ToolsSettingsPage: View {
     /// 当前展开编辑的 Tool id；nil 表示无选中
     @State private var expandedId: String?
 
+    /// 待确认删除的 Tool id；非 nil 时弹出删除确认 alert
+    @State private var pendingDeleteId: String?
+
     /// 构造 Tools 设置页
     /// - Parameter viewModel: 宿主注入的设置视图模型
     public init(viewModel: SettingsViewModel) {
@@ -43,6 +46,32 @@ public struct ToolsSettingsPage: View {
                 toolList
             }
         }
+        // 删除确认：用户误点垃圾桶时提供二次确认兜底
+        .alert("删除工具", isPresented: deleteAlertPresented, presenting: pendingDeleteTool) { tool in
+            Button("删除", role: .destructive) {
+                performDelete(id: tool.id)
+                pendingDeleteId = nil
+            }
+            Button("取消", role: .cancel) {
+                pendingDeleteId = nil
+            }
+        } message: { tool in
+            Text("确定要删除「\(tool.name)」吗？此操作不可撤销。")
+        }
+    }
+
+    /// 将 pendingDeleteId 适配为 alert 的 Bool 绑定
+    private var deleteAlertPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteId != nil },
+            set: { if !$0 { pendingDeleteId = nil } }
+        )
+    }
+
+    /// 当前待删除的 Tool 对象，用于 alert 展示真实名称
+    private var pendingDeleteTool: Tool? {
+        guard let id = pendingDeleteId else { return nil }
+        return viewModel.configuration.tools.first { $0.id == id }
     }
 
     // MARK: - 顶部操作行
@@ -108,15 +137,20 @@ public struct ToolsSettingsPage: View {
                     expandedId = isExpanded ? nil : tool.id
                 }
             } onDelete: {
-                deleteTool(id: tool.id)
+                // 不直接删，先设置 pendingDeleteId 弹出 alert 二次确认
+                pendingDeleteId = tool.id
             }
 
             // 内联编辑区（展开时显示）
+            // 用 .opacity 淡入淡出 + VStack 高度随 withAnimation 自然扩张，
+            // 视觉上呈现从 row 底部"推开"的展开动画；避免 .move(edge:.top)
+            // 带来的从外部飞入感。
             if isExpanded {
                 toolEditor(for: binding)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.opacity)
             }
         }
+        .clipped()
         .background(
             RoundedRectangle(cornerRadius: SliceRadius.card)
                 .fill(SliceColor.surface)
@@ -125,7 +159,6 @@ public struct ToolsSettingsPage: View {
                         .stroke(strokeColor, lineWidth: 0.5)
                 )
         )
-        .animation(SliceAnimation.standard, value: expandedId)
     }
 
     // MARK: - 内联编辑区
@@ -185,20 +218,22 @@ public struct ToolsSettingsPage: View {
         }
     }
 
-    /// 删除指定工具
-    private func deleteTool(id: String) {
-        print("[ToolsSettingsPage] deleteTool: id=\(id)")
-        viewModel.configuration.tools.removeAll { $0.id == id }
-        // 若删的是当前展开项，收起
-        if expandedId == id {
-            expandedId = nil
+    /// 实际执行删除（alert 确认后才调用）
+    private func performDelete(id: String) {
+        print("[ToolsSettingsPage] performDelete: id=\(id)")
+        withAnimation(SliceAnimation.standard) {
+            viewModel.configuration.tools.removeAll { $0.id == id }
+            // 若删的是当前展开项，收起
+            if expandedId == id {
+                expandedId = nil
+            }
         }
         Task {
             do {
                 try await viewModel.save()
-                print("[ToolsSettingsPage] deleteTool: saved OK")
+                print("[ToolsSettingsPage] performDelete: saved OK")
             } catch {
-                print("[ToolsSettingsPage] deleteTool: save failed – \(error.localizedDescription)")
+                print("[ToolsSettingsPage] performDelete: save failed – \(error.localizedDescription)")
             }
         }
     }

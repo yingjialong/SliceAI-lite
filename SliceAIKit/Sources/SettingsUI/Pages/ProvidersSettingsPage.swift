@@ -25,6 +25,9 @@ public struct ProvidersSettingsPage: View {
     /// 当前展开编辑的 Provider id；nil 表示无选中
     @State private var expandedId: String?
 
+    /// 待确认删除的 Provider id；非 nil 时弹出删除确认 alert
+    @State private var pendingDeleteId: String?
+
     /// 构造 Providers 设置页
     /// - Parameter viewModel: 宿主注入的设置视图模型
     public init(viewModel: SettingsViewModel) {
@@ -43,6 +46,34 @@ public struct ProvidersSettingsPage: View {
                 providerList
             }
         }
+        // 删除确认：用户误点垃圾桶时提供二次确认兜底
+        .alert("删除 Provider",
+               isPresented: deleteAlertPresented,
+               presenting: pendingDeleteProvider) { provider in
+            Button("删除", role: .destructive) {
+                performDelete(id: provider.id)
+                pendingDeleteId = nil
+            }
+            Button("取消", role: .cancel) {
+                pendingDeleteId = nil
+            }
+        } message: { provider in
+            Text("确定要删除「\(provider.name)」吗？关联此 Provider 的工具将失效，请先在工具中改绑其他 Provider。")
+        }
+    }
+
+    /// 将 pendingDeleteId 适配为 alert 的 Bool 绑定
+    private var deleteAlertPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteId != nil },
+            set: { if !$0 { pendingDeleteId = nil } }
+        )
+    }
+
+    /// 当前待删除的 Provider 对象，用于 alert 展示真实名称
+    private var pendingDeleteProvider: Provider? {
+        guard let id = pendingDeleteId else { return nil }
+        return viewModel.configuration.providers.first { $0.id == id }
     }
 
     // MARK: - 顶部操作行
@@ -109,15 +140,20 @@ public struct ProvidersSettingsPage: View {
                     expandedId = isExpanded ? nil : provider.id
                 }
             } onDelete: {
-                deleteProvider(id: provider.id)
+                // 不直接删，先设置 pendingDeleteId 弹出 alert 二次确认
+                pendingDeleteId = provider.id
             }
 
             // 内联编辑区（展开时显示）
+            // 用 .opacity 淡入淡出 + VStack 高度随 withAnimation 自然扩张，
+            // 视觉上呈现从 row 底部"推开"的展开动画；避免 .move(edge:.top)
+            // 带来的从外部飞入感。
             if isExpanded {
                 providerEditor(for: binding)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.opacity)
             }
         }
+        .clipped()
         .background(
             RoundedRectangle(cornerRadius: SliceRadius.card)
                 .fill(SliceColor.surface)
@@ -126,7 +162,6 @@ public struct ProvidersSettingsPage: View {
                         .stroke(strokeColor, lineWidth: 0.5)
                 )
         )
-        .animation(SliceAnimation.standard, value: expandedId)
     }
 
     // MARK: - 内联编辑区
@@ -191,20 +226,22 @@ public struct ProvidersSettingsPage: View {
         }
     }
 
-    /// 删除指定 Provider
-    private func deleteProvider(id: String) {
-        print("[ProvidersSettingsPage] deleteProvider: id=\(id)")
-        viewModel.configuration.providers.removeAll { $0.id == id }
-        // 若删的是当前展开项，收起
-        if expandedId == id {
-            expandedId = nil
+    /// 实际执行删除（alert 确认后才调用）
+    private func performDelete(id: String) {
+        print("[ProvidersSettingsPage] performDelete: id=\(id)")
+        withAnimation(SliceAnimation.standard) {
+            viewModel.configuration.providers.removeAll { $0.id == id }
+            // 若删的是当前展开项，收起
+            if expandedId == id {
+                expandedId = nil
+            }
         }
         Task {
             do {
                 try await viewModel.save()
-                print("[ProvidersSettingsPage] deleteProvider: saved OK")
+                print("[ProvidersSettingsPage] performDelete: saved OK")
             } catch {
-                print("[ProvidersSettingsPage] deleteProvider: save failed – \(error.localizedDescription)")
+                print("[ProvidersSettingsPage] performDelete: save failed – \(error.localizedDescription)")
             }
         }
     }
