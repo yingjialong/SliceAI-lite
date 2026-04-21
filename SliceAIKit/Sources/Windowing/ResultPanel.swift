@@ -1,5 +1,6 @@
 // SliceAIKit/Sources/Windowing/ResultPanel.swift
 import AppKit
+import DesignSystem
 import SliceCore
 import SwiftUI
 
@@ -62,11 +63,14 @@ public final class ResultPanel {
     ///   - anchor: 选区中心（屏幕坐标，左下原点）；用于把 panel 定位到鼠标附近
     ///   - onDismiss: 用户主动关闭（点关闭按钮 / 点外部）时的回调；通常传入
     ///     `{ streamTask.cancel() }` 让 AppDelegate 取消正在跑的 LLM 请求
+    ///   - onRegenerate: 用户点击"重新生成"按钮时的回调；调用方需传入重新触发
+    ///     本次 tool + payload 的 closure；nil 时按钮仍显示但点击无效果
     public func open(
         toolName: String,
         model: String,
         anchor: CGPoint,
-        onDismiss: (() -> Void)? = nil
+        onDismiss: (() -> Void)? = nil,
+        onRegenerate: (@MainActor () -> Void)? = nil
     ) {
         // 缓存 dismiss 回调；下次 open 时会被覆盖（旧 task 应在那之前自然结束）
         self.onDismiss = onDismiss
@@ -99,6 +103,14 @@ public final class ResultPanel {
         }
         viewModel.onClose = { [weak self] in
             self?.dismiss()
+        }
+        // 绑定重新生成回调：直接透传调用方 closure
+        viewModel.onRegenerate = onRegenerate
+        // 绑定复制回调：读取当前 viewModel.text 复制到系统剪贴板
+        viewModel.onCopy = { [weak viewModel] in
+            guard let vm = viewModel else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(vm.text, forType: .string)
         }
         panel?.makeKeyAndOrderFront(nil)
         // 应用 pin 状态：设置 level + 装/卸 outside-click monitor
@@ -218,7 +230,8 @@ public final class ResultPanel {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isMovable = true
-        panel.isMovableByWindowBackground = true
+        // 关闭系统背景拖动；header 区域的拖动由 DragAreaHost（NSView.performDrag）接管
+        panel.isMovableByWindowBackground = false
         panel.hasShadow = true
         // 让 SwiftUI 圆角背景透出：透明底色 + 非不透明窗体
         panel.backgroundColor = .clear
@@ -273,10 +286,14 @@ final class ResultViewModel: ObservableObject {
     var onTogglePin: (@MainActor () -> Void)?
     /// "关闭窗口"回调；由 ResultPanel 在每次 open 时绑定
     var onClose: (@MainActor () -> Void)?
+    /// "复制"回调；由 ResultPanel.open 绑定，复制当前 text 到 NSPasteboard
+    var onCopy: (@MainActor () -> Void)?
+    /// "重新生成"回调；由调用方（AppDelegate）提供，重新触发同一 tool + payload
+    var onRegenerate: (@MainActor () -> Void)?
 
     /// 重置视图状态为"新一次对话开始"
-    /// 注意：onTogglePin / onClose 由 `ResultPanel.open(...)` 在 reset 后单独绑定，
-    /// 这里不要清掉，否则按钮会失去响应
+    /// 注意：onTogglePin / onClose / onCopy / onRegenerate 由 `ResultPanel.open(...)` 在 reset 后绑定，
+    /// 这里不要清掉，否则按钮会失去响应；但 reset 时需清空旧 closure 避免残留上一次引用
     func reset(toolName: String, model: String) {
         // 基本字段：标题 + 模型 + 清空上次文本、进入流式态
         self.toolName = toolName
@@ -290,6 +307,9 @@ final class ResultViewModel: ObservableObject {
         // 恢复动作清掉，防止误触发上一次的 closure
         self.onRetry = nil
         self.onOpenSettings = nil
+        // 复制与重新生成也清空，由 open() 重新绑定
+        self.onCopy = nil
+        self.onRegenerate = nil
     }
 
     /// 拼接一段 delta 到现有文本
@@ -322,152 +342,4 @@ final class ResultViewModel: ObservableObject {
     }
 }
 
-/// 结果窗内部视图：顶栏（pin + 标题 + close）+ 正文（Markdown 或错误）+ 底部操作区
-private struct ResultContent: View {
-    @ObservedObject var viewModel: ResultViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            headerBar
-            Divider()
-            // 正文区域：错误优先、否则渲染流式 Markdown
-            if let err = viewModel.errorMessage {
-                errorStateView(message: err)
-            } else {
-                StreamingMarkdownView(text: viewModel.text, isStreaming: viewModel.isStreaming)
-            }
-            Divider()
-            // 底部操作区：错误态展示 [复制错误详情]/[打开设置]/[重试]；正常态仅"复制"
-            bottomBar()
-                .padding(10)
-        }
-        .background(PanelColors.background)
-        .foregroundColor(PanelColors.text)
-        .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius))
-    }
-
-    /// 顶栏：左侧 pin 按钮 + 工具名 + 模型名 / 右侧 close 按钮
-    ///
-    /// 由于 panel 是 borderless（无系统 title bar），pin / close 都由内容区
-    /// SwiftUI 按钮承载，符合"浮条美学"。按钮之外的区域可拖（panel
-    /// `isMovableByWindowBackground = true`）。
-    private var headerBar: some View {
-        HStack(spacing: 8) {
-            // pin 按钮：图标随状态切换 pin / pin.fill；钉时填充蓝色提示
-            Button {
-                viewModel.onTogglePin?()
-            } label: {
-                Image(systemName: viewModel.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 12))
-                    .foregroundColor(viewModel.isPinned ? PanelColors.accent : PanelColors.textSecondary)
-                    .frame(width: 20, height: 20)
-            }
-            .buttonStyle(.plain)
-            .help(viewModel.isPinned ? "取消钉住" : "钉住窗口（点击外部不消失）")
-
-            Text(viewModel.toolName)
-                .font(.system(size: 13, weight: .semibold))
-            Text("· \(viewModel.model)")
-                .font(.system(size: 11))
-                .foregroundColor(PanelColors.textSecondary)
-            Spacer()
-
-            // close 按钮：触发 dismiss → 调用 onDismiss 回调 → 取消 stream task
-            Button {
-                viewModel.onClose?()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(PanelColors.textSecondary)
-                    .frame(width: 20, height: 20)
-            }
-            .buttonStyle(.plain)
-            .help("关闭")
-        }
-        .foregroundColor(PanelColors.text)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-    }
-
-    /// 错误状态主视图：红色 banner + 折叠详情区
-    /// - Parameter message: 用户可见的错误摘要（来自 `SliceError.userMessage`）
-    @ViewBuilder
-    private func errorStateView(message: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 红色 banner：告警图标 + 简短错误描述
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
-                    .padding(.top, 2)
-                Text(message)
-                    .foregroundColor(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(10)
-            .background(Color.red.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-
-            // 详情折叠区（默认收起）：只在 errorDetail 非空时出现
-            if let detail = viewModel.errorDetail, !detail.isEmpty {
-                DisclosureGroup(
-                    isExpanded: $viewModel.showDetail,
-                    content: {
-                        ScrollView {
-                            // 等宽字体 + 可选中；便于用户复制诊断
-                            Text(detail)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                        }
-                        .frame(maxHeight: 120)
-                        .background(Color.black.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                    },
-                    label: { Text("错误详情").font(.caption) }
-                )
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
-    /// 底部操作栏：错误态 vs. 正常态两套按钮
-    @ViewBuilder
-    private func bottomBar() -> some View {
-        HStack(spacing: 8) {
-            if viewModel.errorMessage != nil {
-                // 错误态：复制错误详情（拼 message + detail）
-                Button("复制错误详情") {
-                    let text = [viewModel.errorMessage, viewModel.errorDetail]
-                        .compactMap { $0 }
-                        .joined(separator: "\n\n")
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                }
-                // 可选：打开设置
-                if let open = viewModel.onOpenSettings {
-                    Button("打开设置") { open() }
-                }
-                Spacer()
-                // 可选：重试（绑定为默认动作，Return 键触发）
-                if let retry = viewModel.onRetry {
-                    Button("重试") { retry() }
-                        .keyboardShortcut(.defaultAction)
-                }
-            } else {
-                // 正常态：仅"复制"当前文本
-                Button("复制") {
-                    // 注意：clearContents + setString 会覆盖用户剪贴板；
-                    // 与 SelectionCapture 的系统级 Cmd+C 在时间上错开（流结束后用户主动点击）
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(viewModel.text, forType: .string)
-                }
-                Spacer()
-            }
-        }
-    }
-}
+// ResultContent 和 DragAreaHost 已提取到 ResultContentView.swift，保持文件行数在 SwiftLint 限制内

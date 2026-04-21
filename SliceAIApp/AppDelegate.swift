@@ -310,60 +310,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// - Parameters:
     ///   - tool: 要执行的工具定义
     ///   - payload: 选中文字及其来源上下文
-    ///
-    /// 执行顺序：
-    /// 1. 创建 `streamTask`（body 是 async，会等当前 sync 栈 return 后才 schedule 到 MainActor）
-    /// 2. `resultPanel.open(...)` 同步显示 panel，并把 `{ streamTask.cancel() }` 注入为 onDismiss
-    /// 3. execute() 返回；MainActor 开始执行 streamTask body（await execute → for-await）
-    /// 4. 用户点 panel 关闭 / 点 panel 外部时 → onDismiss → streamTask.cancel()
-    ///    → for-await 抛 `CancellationError` 或 `URLError.cancelled` → catch 内静默 return
     func execute(tool: SliceCore.Tool, payload: SelectionPayload) {
         let streamTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                // 进入 ToolExecutor actor → 拉 key → 组 request → 得到 AsyncThrowingStream
                 let stream = try await self.container.toolExecutor.execute(tool: tool, payload: payload)
                 for try await chunk in stream {
                     self.container.resultPanel.append(chunk.delta)
                 }
                 self.container.resultPanel.finish()
             } catch {
-                // 用户主动 dismiss panel 触发 task.cancel()：底层可能抛 CancellationError
-                // （await 命中 cancellation point）或 URLError(.cancelled)（URLSession 终止）。
-                // 两种都视为"静默退出"，不展示错误——panel 已经被用户关了。
-                if error is CancellationError ||
-                   (error as? URLError)?.code == .cancelled {
-                    return
-                }
-                // 映射到 SliceError 展示给用户；未分类错误统一降级为 invalidResponse，
-                // developerContext 会把字符串 payload 脱敏为 <redacted>
-                let sliceError: SliceError
-                if let err = error as? SliceError {
-                    sliceError = err
-                } else {
-                    sliceError = .provider(.invalidResponse(String(describing: error)))
-                }
-                // [重试]：在主线程重新触发一次本次 execute（tool/payload 闭包捕获）
-                // [打开设置]：跳转到 Settings 窗口，方便用户修正 API Key 等配置
-                self.container.resultPanel.fail(
-                    with: sliceError,
-                    onRetry: { [weak self] in
-                        guard let self else { return }
-                        self.execute(tool: tool, payload: payload)
-                    },
-                    onOpenSettings: { [weak self] in
-                        self?.showSettings()
-                    }
-                )
+                self.handleStreamError(error, tool: tool, payload: payload)
             }
         }
-        // open panel：anchor = 选区屏幕坐标；onDismiss 捕获 streamTask 引用，
-        // 用户关闭 panel 时 cancel task → 正在等的 await 点抛 cancellation → 静默退出
+        // open panel：anchor = 选区屏幕坐标；onDismiss 捕获 streamTask 引用以便 cancel stream；
+        // onRegenerate：先 cancel 旧 stream，再重新 execute 同一 tool + payload
         container.resultPanel.open(
             toolName: tool.name,
             model: tool.modelId ?? "default",
             anchor: payload.screenPoint,
-            onDismiss: { streamTask.cancel() }
+            onDismiss: { streamTask.cancel() },
+            onRegenerate: { [weak self] in
+                streamTask.cancel()
+                Self.log.info("onRegenerate: re-running tool=\(tool.name, privacy: .public)")
+                self?.execute(tool: tool, payload: payload)
+            }
+        )
+    }
+
+    /// 统一处理 stream task 的错误：取消错误静默退出，其他错误映射到 SliceError 展示给用户
+    /// - Parameters:
+    ///   - error: stream task 抛出的原始错误
+    ///   - tool: 触发本次执行的工具（用于重试 closure 捕获）
+    ///   - payload: 本次执行的选区 payload（用于重试 closure 捕获）
+    private func handleStreamError(_ error: Error, tool: SliceCore.Tool, payload: SelectionPayload) {
+        // 用户主动 dismiss panel 触发 task.cancel()：静默退出，panel 已不可见
+        if error is CancellationError || (error as? URLError)?.code == .cancelled {
+            return
+        }
+        // 映射到 SliceError；developerContext 内的字符串 payload 已在 SliceError 层脱敏
+        let sliceError: SliceError
+        if let err = error as? SliceError {
+            sliceError = err
+        } else {
+            sliceError = .provider(.invalidResponse(String(describing: error)))
+        }
+        container.resultPanel.fail(
+            with: sliceError,
+            onRetry: { [weak self] in
+                guard let self else { return }
+                self.execute(tool: tool, payload: payload)
+            },
+            onOpenSettings: { [weak self] in self?.showSettings() }
         )
     }
 
