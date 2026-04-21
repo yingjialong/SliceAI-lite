@@ -266,16 +266,18 @@ private struct ToolRow: View {
         .onTapGesture { onToggle() }
     }
 
-    /// 工具图标：优先尝试 SF Symbol，退回到 emoji 文字展示
+    /// 工具图标：emoji 字符走 Text；ASCII 字符串按 SF Symbol 解析
     private var iconView: some View {
         ZStack {
             RoundedRectangle(cornerRadius: SliceRadius.control)
                 .fill(SliceColor.hoverFill)
                 .frame(width: 32, height: 32)
 
-            // 先尝试作为 SF Symbol 渲染；若 icon 是 emoji 则会显示为空白，
-            // 所以用 Text 覆盖 emoji 场景（SF Symbol 渲染不影响 Text 层）
-            Group {
+            // 启发式：首字符非 ASCII 视为 emoji（默认工具 🌐📝✨💡 走此分支），
+            // 否则当成 SF Symbol 名（如 "hammer" / "doc.on.doc"）
+            if let scalar = tool.icon.unicodeScalars.first, !scalar.isASCII {
+                Text(tool.icon).font(.system(size: 18))
+            } else {
                 Image(systemName: tool.icon)
                     .font(.system(size: 14))
                     .foregroundColor(SliceColor.accent)
