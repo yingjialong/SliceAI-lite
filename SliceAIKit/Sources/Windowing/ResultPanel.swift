@@ -261,22 +261,53 @@ public final class ResultPanel {
 /// 即可（类已 `@MainActor` 限定）。
 @MainActor
 final class ResultViewModel: ObservableObject {
+
+    // MARK: - 流式状态机
+
+    /// 流式输出的完整生命周期状态
+    ///
+    /// 状态转换：
+    ///   - open()     → .thinking（请求已发，等待首字节）
+    ///   - append()   → .streaming（首字节到达，持续流入）
+    ///   - finish()   → .finished（流正常结束）
+    ///   - fail(...)  → .error（流异常中止）
+    enum StreamingState: Equatable {
+        /// 刚创建，未开始请求（复用窗口时的初始态）
+        case idle
+        /// 请求已发出，等待 LLM 首字节响应
+        case thinking
+        /// 正在接收流式 delta，文本持续追加中
+        case streaming
+        /// 流正常结束，文本已完整展示
+        case finished
+        /// 流以错误结束，切换到错误态视图
+        case error
+    }
+
+    /// 当前流式状态；驱动正文区域的视图切换
+    @Published var streamingState: StreamingState = .idle
+
+    /// 是否处于活跃流式输出中（thinking 或 streaming）；供 ProgressStripe 判断是否展示
+    var isStreaming: Bool {
+        streamingState == .thinking || streamingState == .streaming
+    }
+
+    // MARK: - 内容字段
+
     /// 当前工具名（标题栏主标题）
     @Published var toolName: String = ""
     /// 当前模型名（标题栏副文本）
     @Published var model: String = ""
     /// 已累积的 Markdown 文本；每次 append 都对现有字符串拼接
     @Published var text: String = ""
-    /// 是否仍在流式接收中；控制闪烁光标与状态展示
-    @Published var isStreaming: Bool = false
-    /// 用户可见的错误信息；非 nil 时代替正文展示错误态
+    /// 用户可见的错误信息；.error 态时展示在 ErrorBlock 的 message 字段
     @Published var errorMessage: String?
-    /// 错误详情（开发者上下文）；供折叠区展示，已在 SliceError 层脱敏
+    /// 错误详情（开发者上下文）；供 ErrorBlock 的折叠区展示，已在 SliceError 层脱敏
     @Published var errorDetail: String?
-    /// 错误详情折叠区是否展开；绑定到 DisclosureGroup
-    @Published var showDetail: Bool = false
     /// 是否钉住；同步自 ResultPanel.isPinned，用于切换 pin 按钮的图标
     @Published var isPinned: Bool = false
+
+    // MARK: - 动作回调
 
     /// "重试"动作回调；nil 表示当前错误不支持重试
     var onRetry: (@MainActor () -> Void)?
@@ -291,19 +322,25 @@ final class ResultViewModel: ObservableObject {
     /// "重新生成"回调；由调用方（AppDelegate）提供，重新触发同一 tool + payload
     var onRegenerate: (@MainActor () -> Void)?
 
+    // MARK: - 状态切换方法
+
     /// 重置视图状态为"新一次对话开始"
+    ///
+    /// - 状态切至 .thinking：请求已发，等待首字节
+    /// - 清空上次文本与错误信息，避免旧内容闪烁
+    ///
     /// 注意：onTogglePin / onClose / onCopy / onRegenerate 由 `ResultPanel.open(...)` 在 reset 后绑定，
     /// 这里不要清掉，否则按钮会失去响应；但 reset 时需清空旧 closure 避免残留上一次引用
     func reset(toolName: String, model: String) {
-        // 基本字段：标题 + 模型 + 清空上次文本、进入流式态
+        // 基本字段：标题 + 模型 + 清空上次文本
         self.toolName = toolName
         self.model = model
         self.text = ""
-        self.isStreaming = true
+        // 请求已发、等待首字节 → thinking 态
+        self.streamingState = .thinking
         // 错误相关字段全部清空，避免上次错误残留
         self.errorMessage = nil
         self.errorDetail = nil
-        self.showDetail = false
         // 恢复动作清掉，防止误触发上一次的 closure
         self.onRetry = nil
         self.onOpenSettings = nil
@@ -312,19 +349,25 @@ final class ResultViewModel: ObservableObject {
         self.onRegenerate = nil
     }
 
-    /// 拼接一段 delta 到现有文本
+    /// 拼接一段流式 delta 到现有文本
+    ///
+    /// 首次调用（thinking → streaming）时自动切换状态，让 UI 从加载态切至渲染态。
     func append(_ delta: String) {
+        // 收到首字节时从 thinking 切到 streaming
+        if streamingState == .thinking {
+            streamingState = .streaming
+        }
         text += delta
     }
 
-    /// 标记流结束
+    /// 标记流正常结束，隐藏 ProgressStripe 和闪烁光标
     func finish() {
-        isStreaming = false
+        streamingState = .finished
     }
 
-    /// 标记流失败；停止闪烁并写入错误信息与恢复动作
+    /// 标记流失败；切到错误态并写入错误信息与恢复动作
     /// - Parameters:
-    ///   - message: 面向用户的错误摘要（红色 banner 正文）
+    ///   - message: 面向用户的错误摘要（ErrorBlock.message）
     ///   - detail: 开发者上下文（折叠详情），调用方需保证已脱敏
     ///   - onRetry: 可选重试回调
     ///   - onOpenSettings: 可选打开设置回调
@@ -334,7 +377,8 @@ final class ResultViewModel: ObservableObject {
         onRetry: (@MainActor () -> Void)?,
         onOpenSettings: (@MainActor () -> Void)?
     ) {
-        self.isStreaming = false
+        // 切到错误态，隐藏 ProgressStripe
+        self.streamingState = .error
         self.errorMessage = message
         self.errorDetail = detail
         self.onRetry = onRetry

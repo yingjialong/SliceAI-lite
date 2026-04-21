@@ -3,31 +3,84 @@ import AppKit
 import DesignSystem
 import SwiftUI
 
-/// 结果窗内部视图：顶栏（pin 圆点 + 标题 + 模型 Chip + 4 按钮）+ 正文（Markdown 或错误）+ 底部操作区
+/// 结果窗内部视图：顶栏（pin 圆点 + 标题 + 模型 Chip + 4 按钮）+ ProgressStripe + 正文
 ///
 /// 与 `ResultPanel` 分离：Panel 负责 NSPanel 生命周期与 pin/dismiss 状态，
 /// 此 View 只负责纯 SwiftUI 渲染，两者通过 `ResultViewModel` 通信。
+///
+/// 正文区域根据 `streamingState` 切换三种视图：
+///   - .idle / .thinking → ThinkingDots 居中等待态
+///   - .streaming / .finished → StreamingMarkdownView 流式渲染
+///   - .error → ScrollView + ErrorBlock 错误态（含重试/设置按钮）
 struct ResultContent: View {
     @ObservedObject var viewModel: ResultViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerBar
-            Divider()
-            // 正文区域：错误优先、否则渲染流式 Markdown
-            if let err = viewModel.errorMessage {
-                errorStateView(message: err)
+
+            // 标题与正文之间的流式进度条 / 静态分隔线
+            // streaming 期间展示滑动光条，结束后换为 1.5pt 静态分隔线避免布局跳动
+            if viewModel.isStreaming {
+                ProgressStripe()
             } else {
-                StreamingMarkdownView(text: viewModel.text, isStreaming: viewModel.isStreaming)
+                Divider()
+                    .background(SliceColor.divider)
+                    .frame(height: 1.5)
             }
-            Divider()
-            // 底部操作区：错误态展示 [复制错误详情]/[打开设置]/[重试]；正常态仅"复制"
-            bottomBar()
-                .padding(10)
+
+            // 正文区域：根据 streamingState 切换视图
+            contentArea
         }
-        .background(PanelColors.background)
-        .foregroundColor(PanelColors.text)
-        .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius))
+        .glassBackground(.hud, cornerRadius: SliceRadius.card)
+        .overlay(
+            RoundedRectangle(cornerRadius: SliceRadius.card)
+                .stroke(SliceColor.border, lineWidth: 0.5)
+        )
+        .foregroundColor(SliceColor.textPrimary)
+        .clipShape(RoundedRectangle(cornerRadius: SliceRadius.card))
+    }
+
+    /// 正文区域：根据 streamingState 切换三种视图
+    ///
+    /// - .idle / .thinking：ThinkingDots 居中展示等待动效
+    /// - .streaming / .finished：StreamingMarkdownView 渲染累积文本
+    /// - .error：ScrollView 包裹 ErrorBlock，挂载重试 / 设置按钮
+    @ViewBuilder
+    private var contentArea: some View {
+        switch viewModel.streamingState {
+        case .idle, .thinking:
+            // 等待首字节：居中展示脉动小点
+            ThinkingDots()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .padding(.horizontal, SliceSpacing.xxl)
+                .padding(.vertical, SliceSpacing.xl)
+
+        case .streaming, .finished:
+            // 流式渲染：isStreaming = true 时 StreamingMarkdownView 会追加闪烁光标
+            StreamingMarkdownView(
+                text: viewModel.text,
+                isStreaming: viewModel.streamingState == .streaming
+            )
+
+        case .error:
+            // 错误态：用 ErrorBlock 展示错误信息 + 可选重试/设置按钮
+            // @MainActor 闭包转换为 @Sendable：通过 Task { @MainActor in } 桥接跳回主线程
+            ScrollView {
+                ErrorBlock(
+                    title: "请求失败",
+                    message: viewModel.errorMessage ?? "未知错误",
+                    detail: viewModel.errorDetail,
+                    onRetry: viewModel.onRetry.map { retry in
+                        { @Sendable in Task { @MainActor in retry() } }
+                    },
+                    onOpenSettings: viewModel.onOpenSettings.map { open in
+                        { @Sendable in Task { @MainActor in open() } }
+                    }
+                )
+                .padding(SliceSpacing.xxl)
+            }
+        }
     }
 
     /// 顶栏：左侧 pin 圆点 + 工具名 + 模型 Chip / 右侧 4 个 IconButton
@@ -76,78 +129,6 @@ struct ResultContent: View {
         .background(DragAreaHost())
     }
 
-    /// 错误状态主视图：红色 banner + 折叠详情区
-    /// - Parameter message: 用户可见的错误摘要（来自 `SliceError.userMessage`）
-    @ViewBuilder
-    private func errorStateView(message: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
-                    .padding(.top, 2)
-                Text(message)
-                    .foregroundColor(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(10)
-            .background(Color.red.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-
-            if let detail = viewModel.errorDetail, !detail.isEmpty {
-                DisclosureGroup(
-                    isExpanded: $viewModel.showDetail,
-                    content: {
-                        ScrollView {
-                            Text(detail)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                        }
-                        .frame(maxHeight: 120)
-                        .background(Color.black.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                    },
-                    label: { Text("错误详情").font(.caption) }
-                )
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-
-    /// 底部操作栏：错误态 vs. 正常态两套按钮
-    @ViewBuilder
-    private func bottomBar() -> some View {
-        HStack(spacing: 8) {
-            if viewModel.errorMessage != nil {
-                Button("复制错误详情") {
-                    let text = [viewModel.errorMessage, viewModel.errorDetail]
-                        .compactMap { $0 }
-                        .joined(separator: "\n\n")
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                }
-                if let open = viewModel.onOpenSettings {
-                    Button("打开设置") { open() }
-                }
-                Spacer()
-                if let retry = viewModel.onRetry {
-                    Button("重试") { retry() }
-                        .keyboardShortcut(.defaultAction)
-                }
-            } else {
-                Button("复制") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(viewModel.text, forType: .string)
-                }
-                Spacer()
-            }
-        }
-    }
 }
 
 /// 标题栏拖拽宿主：桥接 NSView.performDrag 使 SwiftUI header 空白区可拖动 NSPanel
