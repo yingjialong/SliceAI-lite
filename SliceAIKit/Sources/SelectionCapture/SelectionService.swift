@@ -46,7 +46,7 @@ public struct SelectionService: Sendable {
     ///
     /// 返回值与 `capture()` 一致；不抛错（primary 的错误已在 tryCapture 里被静默降级为 nil）。
     public func captureFromPrimaryOnly() async -> SelectionPayload? {
-        return await tryCapture(from: primary)
+        await tryCapture(from: primary)
     }
 
     /// 尝试从单个 source 读取并转换为 SelectionPayload；任何失败（抛错 / nil）都返回 nil

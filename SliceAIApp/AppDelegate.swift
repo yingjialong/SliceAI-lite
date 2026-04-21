@@ -67,8 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.log.info("applicationDidFinishLaunching")
 
-        // 1. 菜单栏图标与菜单
+        // 1. 菜单栏图标与菜单；创建后立即评估 provider 配置状态（是否需要显示小红点）
         menuBarController = MenuBarController(container: container, delegate: self)
+        menuBarController?.refreshConfigStateIndicator()
 
         // 2. 权限监控：先启动轮询再根据当前状态分流
         //    未授予辅助功能 → 展示 onboarding；授予后再 wireRuntime
@@ -412,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Onboarding 完成：写入 API Key（若有）后接线运行时
+    /// Onboarding 完成：写入 API Key（若有）后接线运行时，并刷新菜单栏图标状态
     /// - Parameter apiKey: 用户填写的 Key；空串表示"稍后再说"，不写入 Keychain
     private func finishOnboarding(apiKey: String) async {
         if !apiKey.isEmpty {
@@ -421,5 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboardingWindow?.close()
         onboardingWindow = nil
         wireRuntime()
+        // Onboarding 完成后重新评估是否已有 Provider，刷新菜单栏小红点状态
+        menuBarController?.refreshConfigStateIndicator()
     }
 } // swiftlint:enable type_body_length

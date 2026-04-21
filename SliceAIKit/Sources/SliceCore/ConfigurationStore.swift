@@ -37,6 +37,7 @@ public actor FileConfigurationStore: ConfigurationProviding {
         // 2. 尝试从磁盘加载（文件缺失 / 损坏时走 catch）
         if let loaded = try? await load() {
             cached = loaded
+            // swiftlint:disable:next line_length
             configLog.debug("current() loaded config from disk, schemaVersion=\(loaded.schemaVersion, privacy: .public)")
             return loaded
         }
@@ -129,6 +130,7 @@ public actor FileConfigurationStore: ConfigurationProviding {
     public static func standardFileURL() -> URL {
         let fm = FileManager.default
         // `.first!` 安全：userDomainMask 下的 ApplicationSupport 在 macOS 上永远存在
+        // swiftlint:disable:next force_unwrapping
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("SliceAI", isDirectory: true)
         return appSupport.appendingPathComponent("config.json")
