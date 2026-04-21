@@ -1,4 +1,5 @@
 // SliceAIKit/Sources/SettingsUI/ProviderEditorView.swift
+import DesignSystem
 import SliceCore
 import SwiftUI
 
@@ -7,6 +8,9 @@ import SwiftUI
 /// API Key 不存 Configuration，而是通过注入的 `onSaveKey` / `onLoadKey` 回调
 /// 间接访问 Keychain；连接测试通过 `onTestKey` 回调（通常由 ViewModel 转发到
 /// LLMProviders）。这样本视图无需感知具体存储 / 网络实现，便于预览与单元测试。
+///
+/// 样式采用 DesignSystem：SectionCard 分组 + SettingsRow 行布局 + PillButton 操作按钮，
+/// 不使用 Form/Section（FormStyle.grouped 在内联展开场景有额外内边距不适用）。
 public struct ProviderEditorView: View {
 
     /// 指向 Configuration 中某个 Provider 的双向绑定
@@ -19,24 +23,26 @@ public struct ProviderEditorView: View {
     /// （遵循"typed first, saved fallback"约定，让用户改完 key 不必先 Save 也能 Test）
     @State private var savedKey: String = ""
 
+    /// Base URL 的字符串中间态，用于 TextField 编辑
+    /// 只有成功解析为 URL 时才回写 provider.baseURL，避免存入无效值
+    @State private var baseURLText: String = ""
+
     /// Save key 后的状态消息：成功绿/灰、失败红；成功 2 秒自动消失
-    @State private var saveMessage: StatusMessage?
+    @State private var saveMessage: ProviderStatusMessage?
 
     /// Test connection 后的状态消息：成功绿/灰、失败红；成功 2 秒自动消失
-    @State private var testMessage: StatusMessage?
+    @State private var testMessage: ProviderStatusMessage?
 
     /// Test 是否进行中；为 true 时禁用按钮 + 显示"测试中…"
     @State private var isTesting: Bool = false
 
-    /// 保存 API Key 的异步回调；改成 throws 让错误能在 UI 层呈现"保存失败：xxx"
+    /// 保存 API Key 的异步回调；throws 让错误能在 UI 层呈现"保存失败：xxx"
     private let onSaveKey: @Sendable (String) async throws -> Void
 
     /// 读取 API Key 的异步回调；返回 nil 表示不存在
     private let onLoadKey: @Sendable () async -> String?
 
-    /// 测试连接的异步回调；签名 (key, baseURL, model)。
-    /// 由调用方（通常 SettingsScene → SettingsViewModel.testProvider）注入
-    /// 真正的 LLM 探测请求；本视图只负责 UI 状态与错误展示。
+    /// 测试连接的异步回调；签名 (key, baseURL, model)
     private let onTestKey: @Sendable (String, URL, String) async throws -> Void
 
     /// 构造 Provider 编辑视图
@@ -58,62 +64,102 @@ public struct ProviderEditorView: View {
     }
 
     public var body: some View {
-        Form {
-            basicsSection
-            apiKeySection
+        VStack(alignment: .leading, spacing: SliceSpacing.lg) {
+            // 基础信息分组：名称 / Base URL / 默认模型
+            basicsCard
+
+            // API Key 分组：输入 + 保存/测试按钮 + 状态消息
+            apiKeyCard
         }
-        .formStyle(.grouped)
         .task {
-            // 视图首次出现时尝试预填已有 API Key，便于用户确认当前状态。
-            // 预读的值同时存入 savedKey 供 Test connection 在 SecureField 为空时回退
+            // 视图首次出现时同步 Base URL 字符串态
+            baseURLText = provider.baseURL.absoluteString
+            // 预读已有 API Key，同时存入 savedKey 供 Test 回退
             if let existing = await onLoadKey() {
                 apiKey = existing
                 savedKey = existing
+                print("[ProviderEditorView] onLoadKey: key loaded for provider '\(provider.id)'")
             }
         }
     }
 
-    /// 基础信息：名称 / Base URL / 默认模型
-    private var basicsSection: some View {
-        Section("Basics") {
-            TextField("Name", text: $provider.name)
-            TextField(
-                "Base URL",
-                text: Binding(
-                    get: { provider.baseURL.absoluteString },
-                    set: { newValue in
-                        // 仅在能解析为合法 URL 时才覆盖，避免把无效字符串存入 Configuration
+    // MARK: - 基础信息卡片
+
+    /// 基础信息分组：名称 / Base URL / 默认模型
+    private var basicsCard: some View {
+        SectionCard("基础信息") {
+            // 名称行
+            SettingsRow("名称") {
+                TextField("名称", text: $provider.name)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundColor(SliceColor.textPrimary)
+                    .font(SliceFont.body)
+            }
+
+            // Base URL 行：中间态编辑，失焦或回车时尝试解析
+            SettingsRow("Base URL") {
+                TextField("https://api.openai.com/v1", text: $baseURLText)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundColor(SliceColor.textPrimary)
+                    .font(SliceFont.body)
+                    .onChange(of: baseURLText) { _, newValue in
+                        // 实时解析，仅有效 URL 才回写，避免存入非法值
                         if let url = URL(string: newValue) {
                             provider.baseURL = url
                         }
                     }
-                )
-            )
-            TextField("Default Model", text: $provider.defaultModel)
+            }
+
+            // 默认模型行（最后一行无分隔线，借助 SettingsRow 内置分隔）
+            SettingsRow("默认模型") {
+                TextField("gpt-4o-mini", text: $provider.defaultModel)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundColor(SliceColor.textPrimary)
+                    .font(SliceFont.body)
+            }
         }
     }
 
-    /// API Key + Save / Test 按钮 + 状态消息
-    private var apiKeySection: some View {
-        Section("API Key") {
-            SecureField("sk-…", text: $apiKey)
-            HStack(spacing: 12) {
-                Button("Save key") {
+    // MARK: - API Key 卡片
+
+    /// API Key 分组：SecureField + Save / Test 按钮 + 状态消息
+    private var apiKeyCard: some View {
+        SectionCard("API Key") {
+            // API Key 输入行
+            SettingsRow("API Key") {
+                SecureField("sk-…", text: $apiKey)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundColor(SliceColor.textPrimary)
+                    .font(SliceFont.body)
+            }
+
+            // 操作按钮行（不用 SettingsRow，横向排列多个按钮）
+            HStack(spacing: SliceSpacing.base) {
+                PillButton("保存 Key", icon: "key", style: .secondary) {
                     Task { await saveKey() }
                 }
                 .disabled(apiKey.isEmpty)
+                .opacity(apiKey.isEmpty ? 0.45 : 1)
 
-                Button("Test connection") {
+                PillButton(isTesting ? "测试中…" : "测试连接", icon: "network", style: .secondary) {
                     Task { await testKey() }
                 }
                 .disabled(isTesting || effectiveKey.isEmpty)
+                .opacity(isTesting || effectiveKey.isEmpty ? 0.45 : 1)
 
                 Spacer()
-                Text("Stored in macOS Keychain")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                Text("存储在系统钥匙串")
+                    .font(SliceFont.caption)
+                    .foregroundColor(SliceColor.textTertiary)
             }
-            // 状态消息独立于 HStack 排列，避免按钮行 layout 抖动
+            .padding(.vertical, SliceSpacing.base)
+
+            // 状态消息区（saveMessage / testMessage 独立展示，避免按钮行 layout 抖动）
             if let msg = saveMessage {
                 statusLabel(msg)
             }
@@ -123,28 +169,33 @@ public struct ProviderEditorView: View {
         }
     }
 
+    // MARK: - 计算属性
+
     /// Test 实际使用的 key：SecureField 非空用 typed；否则用预读的 saved key
-    /// 任一非空 Test 即可触发；都为空则按钮 disabled，引导用户先填 key
     private var effectiveKey: String {
         apiKey.isEmpty ? savedKey : apiKey
     }
 
+    // MARK: - 异步操作
+
     /// 执行保存：捕获当前 apiKey、调用 onSaveKey、按结果更新 saveMessage
-    /// 成功消息 2 秒后自动消失（如果期间没被错误覆盖）；失败消息保留到下次保存
     private func saveKey() async {
         let key = apiKey
+        print("[ProviderEditorView] saveKey: begin for provider '\(provider.id)'")
         do {
             try await onSaveKey(key)
             // 同步更新 savedKey，让 Test 立即可用最新已保存值
             savedKey = key
-            saveMessage = StatusMessage(text: "已保存", isError: false)
-            // 成功消息 2 秒后清；期间被错误覆盖则跳过清除
+            saveMessage = ProviderStatusMessage(text: "已保存", isError: false)
+            print("[ProviderEditorView] saveKey: success")
+            // 成功消息 2 秒后自动清除
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             if saveMessage?.isError == false {
                 saveMessage = nil
             }
         } catch {
-            saveMessage = StatusMessage(
+            print("[ProviderEditorView] saveKey: failed – \(error.localizedDescription)")
+            saveMessage = ProviderStatusMessage(
                 text: "保存失败：\(error.localizedDescription)",
                 isError: true
             )
@@ -152,48 +203,58 @@ public struct ProviderEditorView: View {
     }
 
     /// 执行连接测试：用 effectiveKey + 当前 baseURL/model，调 onTestKey
-    /// 期间禁用 Test 按钮 + 显示"测试中…"；结束后立即恢复按钮状态
     private func testKey() async {
         let key = effectiveKey
         guard !key.isEmpty else { return }
+        print("[ProviderEditorView] testKey: begin for provider '\(provider.id)' model=\(provider.defaultModel)")
         isTesting = true
-        testMessage = StatusMessage(text: "测试中…", isError: false)
+        testMessage = ProviderStatusMessage(text: "测试中…", isError: false)
         do {
             try await onTestKey(key, provider.baseURL, provider.defaultModel)
-            // 拿到首 chunk / 流结束即视为成功，由 onTestKey 内部判定
-            testMessage = StatusMessage(text: "✓ 连接成功", isError: false)
+            testMessage = ProviderStatusMessage(text: "连接成功", isError: false)
             isTesting = false
-            // 成功消息 2 秒后清；期间被错误覆盖则跳过清除
+            print("[ProviderEditorView] testKey: success")
+            // 成功消息 2 秒后自动清除
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             if testMessage?.isError == false {
                 testMessage = nil
             }
         } catch let err as SliceError {
-            // SliceError 已带友好文案，直接展示 userMessage
-            testMessage = StatusMessage(text: "✗ \(err.userMessage)", isError: true)
+            // SliceError 携带友好文案，直接展示 userMessage
+            print("[ProviderEditorView] testKey: SliceError – \(err.developerContext)")
+            testMessage = ProviderStatusMessage(text: "测试失败：\(err.userMessage)", isError: true)
             isTesting = false
         } catch {
-            testMessage = StatusMessage(
-                text: "✗ \(error.localizedDescription)",
+            print("[ProviderEditorView] testKey: error – \(error.localizedDescription)")
+            testMessage = ProviderStatusMessage(
+                text: "测试失败：\(error.localizedDescription)",
                 isError: true
             )
             isTesting = false
         }
     }
 
+    // MARK: - 辅助视图
+
     /// 状态消息标签：错误用红色、成功/进行中用次要灰色
     @ViewBuilder
-    private func statusLabel(_ msg: StatusMessage) -> some View {
+    private func statusLabel(_ msg: ProviderStatusMessage) -> some View {
         Text(msg.text)
-            .font(.caption)
-            .foregroundStyle(msg.isError ? Color.red : Color.secondary)
+            .font(SliceFont.caption)
+            .foregroundColor(msg.isError ? SliceColor.error : SliceColor.textSecondary)
             .lineLimit(2)
+            .padding(.vertical, SliceSpacing.xs)
     }
 }
 
-/// 文件内私有：状态消息载体
-/// 用于 saveMessage / testMessage 双 @State，统一展示样式
-private struct StatusMessage: Equatable, Sendable {
+// MARK: - ProviderStatusMessage
+
+/// 状态消息载体（文件内私有）
+///
+/// 用于 saveMessage / testMessage 双 @State，统一展示样式。
+/// 重命名为 ProviderStatusMessage 避免与其他文件的同名私有类型冲突（Swift 私有类型
+/// 在同一模块内仍可能因名称相同导致隐式遮蔽，加前缀更安全）。
+private struct ProviderStatusMessage: Equatable, Sendable {
     let text: String
     let isError: Bool
 }
