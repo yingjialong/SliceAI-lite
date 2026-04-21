@@ -59,25 +59,27 @@ final class ConfigurationAppearanceTests: XCTestCase {
 
     /// 含 appearance=dark 的 JSON 解码正确
     func test_decode_jsonWithAppearance_parsesDark() throws {
-        var json = legacyJSON
         // 在 JSON 末尾 } 前插入 appearance 字段
         let jsonStr = String(data: legacyJSON, encoding: .utf8)!
             .replacingOccurrences(
                 of: "\"appBlocklist\": []",
                 with: "\"appBlocklist\": [], \"appearance\": \"dark\""
             )
-        json = jsonStr.data(using: .utf8)!
+        let json = jsonStr.data(using: .utf8)!
         let cfg = try JSONDecoder().decode(Configuration.self, from: json)
         XCTAssertEqual(cfg.appearance, .dark)
     }
 
-    /// 编码后 JSON 包含 "appearance":"light"
+    /// 编码后 JSON 包含 "appearance":"light"（用结构化解析替代字符串 contains，更健壮）
     func test_encode_includesAppearance() throws {
         var cfg = try JSONDecoder().decode(Configuration.self, from: legacyJSON)
         cfg.appearance = .light
         let encoded = try JSONEncoder().encode(cfg)
-        let jsonStr = String(data: encoded, encoding: .utf8)!
-        XCTAssertTrue(jsonStr.contains("\"appearance\""), "编码结果应包含 appearance key")
-        XCTAssertTrue(jsonStr.contains("\"light\""),      "编码结果应包含 appearance 值 light")
+        // 用 JSONSerialization 解析为字典，避免 contains 误匹配其他 key/value
+        let dict = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any],
+            "编码结果应为合法 JSON 对象"
+        )
+        XCTAssertEqual(dict["appearance"] as? String, "light", "编码结果 appearance 应为 light")
     }
 }

@@ -108,6 +108,22 @@ public actor FileConfigurationStore: ConfigurationProviding {
         configLog.debug("save() wrote config, bytes=\(data.count, privacy: .public)")
     }
 
+    /// 仅更新 appearance 字段并持久化，避免外部传整个 Configuration 覆盖其他字段
+    ///
+    /// 典型调用方：`ThemeManager.onModeChange` 回调，用户切换主题时持久化新模式。
+    /// 实现上先取当前缓存（或磁盘）快照，改 appearance 后走 update() 写回。
+    /// - Parameter mode: 新的主题模式
+    /// - Throws: 磁盘写入失败时向上透传 IO 错误
+    public func updateAppearance(_ mode: AppearanceMode) async throws {
+        // 读取当前配置快照（命中缓存则不产生磁盘 IO）
+        var cfg = await current()
+        // 仅修改 appearance，其余字段保持不变
+        cfg.appearance = mode
+        // 写回磁盘并刷新缓存
+        try await update(cfg)
+        configLog.info("updateAppearance: persisted mode=\(mode.rawValue, privacy: .public)")
+    }
+
     /// App 部署时 config.json 的约定路径
     /// - Returns: `~/Library/Application Support/SliceAI/config.json`
     public static func standardFileURL() -> URL {

@@ -1,5 +1,6 @@
 // SliceAIApp/AppContainer.swift
 import AppKit
+import DesignSystem
 import Foundation
 import HotkeyManager
 import LLMProviders
@@ -41,6 +42,8 @@ final class AppContainer {
     let accessibilityMonitor: AccessibilityMonitor
     /// 设置界面视图模型
     let settingsViewModel: SettingsViewModel
+    /// 主题管理器：持有当前 AppearanceMode，驱动 SwiftUI ColorScheme 与 NSAppearance
+    let themeManager: ThemeManager
 
     /// 组合根构造：所有依赖都在此处装配完毕，外部不再修改
     init() {
@@ -90,5 +93,22 @@ final class AppContainer {
         // 6. 权限与设置
         accessibilityMonitor = AccessibilityMonitor()
         settingsViewModel = SettingsViewModel(store: configStore, keychain: keychain)
+
+        // 7. 主题管理器
+        //    init() 是同步上下文，无法 await configStore.current()，
+        //    因此先用 .auto 占位；AppDelegate.applicationDidFinishLaunching 中
+        //    会异步读取配置并调用 themeManager.setMode(_:) 同步实际值。
+        themeManager = ThemeManager(initialMode: .auto)
+
+        // 8. 连接 onModeChange → 持久化到 config.json
+        //    捕获 themeManager 与 configStore，在 @MainActor 闭包内发起 async Task
+        //    以满足 actor 方法的 async 调用要求
+        let store = configStore
+        themeManager.onModeChange = { @MainActor mode in
+            Task {
+                // updateAppearance 是 actor 方法，需 await；失败静默忽略（磁盘 IO 不应阻断 UI）
+                try? await store.updateAppearance(mode)
+            }
+        }
     }
 }

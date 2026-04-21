@@ -1,5 +1,6 @@
 // SliceAIApp/AppDelegate.swift
 import AppKit
+import DesignSystem
 import HotkeyManager
 import OSLog
 import Permissions
@@ -18,6 +19,7 @@ import Windowing
 ///
 /// 线程模型：`@MainActor` 限定；所有 AppKit / SwiftUI / 面板 API 在主线程调用。
 @MainActor
+// swiftlint:disable type_body_length
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 诊断日志器；用于追踪划词触发链路在哪一层断开
@@ -78,6 +80,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showOnboarding()
         } else {
             wireRuntime()
+        }
+
+        // 3. 异步同步 ThemeManager 初始模式（init 是同步的无法 await），并启动主题跟踪
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let cfg = await self.container.configStore.current()
+            self.container.themeManager.setMode(cfg.appearance)
+            self.applyAppearanceToAllWindows()
+            self.startTrackingTheme()
+        }
+    }
+
+    // MARK: - 主题跟踪
+
+    /// 将当前 ThemeManager.mode 对应的 NSAppearance 应用到所有 NSWindow
+    ///
+    /// 当 mode == .auto 时 nsAppearance 为 nil，窗口自动跟随系统外观；
+    /// light/dark 则强制指定对应外观。
+    private func applyAppearanceToAllWindows() {
+        let appearance = container.themeManager.nsAppearance
+        NSApp.windows.forEach { $0.appearance = appearance }
+    }
+
+    /// 用 withObservationTracking 订阅 ThemeManager.mode 变化
+    ///
+    /// 每次 mode 变化时：
+    ///   1. 应用新外观到所有窗口；
+    ///   2. 递归重新订阅，保证后续变化仍能触发。
+    /// 此模式是 Swift Observation 框架的标准订阅惯用法。
+    private func startTrackingTheme() {
+        withObservationTracking {
+            // 读取 mode 以注册观察依赖；实际值不在这里使用
+            _ = container.themeManager.mode
+        } onChange: { [weak self] in
+            // onChange 回调不在 MainActor，显式跳回主线程操作 UI
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.applyAppearanceToAllWindows()
+                // 递归重订阅，以便追踪下一次变化
+                self.startTrackingTheme()
+            }
         }
     }
 
@@ -334,7 +377,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // NSHostingController 承载 SwiftUI 设置视图；ViewModel 由容器复用
-        let hosting = NSHostingController(rootView: SettingsScene(viewModel: container.settingsViewModel))
+        // 注入 themeManager 使设置页内的 @Environment(ThemeManager.self) 可用
+        let rootView = SettingsScene(viewModel: container.settingsViewModel)
+            .environment(container.themeManager)
+        let hosting = NSHostingController(rootView: rootView)
         let win = NSWindow(contentViewController: hosting)
         win.title = "SliceAI Settings"
         win.styleMask = [.titled, .closable, .resizable]
@@ -352,28 +398,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let view = OnboardingFlow(
             accessibilityMonitor: container.accessibilityMonitor,
             onFinish: { [weak self] apiKey in
-                // OnboardingFlow 回调是 @escaping (String) -> Void，跳回 MainActor 以操作 UI
-                Task { @MainActor in
-                    guard let self else { return }
-                    // 仅在用户实际填写 Key 时写入 Keychain；空串语义为"稍后再说"
-                    if !apiKey.isEmpty {
-                        // 写失败静默忽略：设置面板后续可再次录入
-                        try? await self.container.keychain.writeAPIKey(
-                            apiKey,
-                            providerId: "openai-official"
-                        )
-                    }
-                    // 关闭引导窗口后正式接线运行时
-                    self.onboardingWindow?.close()
-                    self.onboardingWindow = nil
-                    self.wireRuntime()
-                }
+                Task { @MainActor in await self?.finishOnboarding(apiKey: apiKey) }
             }
         )
-        let hosting = NSHostingController(rootView: view)
+        // 注入 themeManager 使 OnboardingFlow 内部视图也能读取当前主题
+        let hosting = NSHostingController(rootView: view.environment(container.themeManager))
         let win = NSWindow(contentViewController: hosting)
         win.title = "Welcome to SliceAI"
-        // 只带标题栏、无关闭按钮；强制用户走完引导流程
         win.styleMask = [.titled]
         win.setContentSize(NSSize(width: 480, height: 340))
         win.isReleasedWhenClosed = false
@@ -382,4 +413,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
-}
+
+    /// Onboarding 完成：写入 API Key（若有）后接线运行时
+    /// - Parameter apiKey: 用户填写的 Key；空串表示"稍后再说"，不写入 Keychain
+    private func finishOnboarding(apiKey: String) async {
+        if !apiKey.isEmpty {
+            try? await container.keychain.writeAPIKey(apiKey, providerId: "openai-official")
+        }
+        onboardingWindow?.close()
+        onboardingWindow = nil
+        wireRuntime()
+    }
+} // swiftlint:enable type_body_length

@@ -54,6 +54,24 @@ final class ConfigurationStoreTests: XCTestCase {
         }
     }
 
+    /// 场景 5：updateAppearance 持久化后 reload 确认 dark
+    func test_updateAppearance_persistsToFile() async throws {
+        let url = tempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = FileConfigurationStore(fileURL: url)
+
+        // 先写入默认配置（appearance=.auto）
+        try await store.save(DefaultConfiguration.initial())
+
+        // 调 updateAppearance(.dark)
+        try await store.updateAppearance(.dark)
+
+        // 用一个新 store 实例（无缓存）从磁盘重新读，确认 dark 已写入
+        let freshStore = FileConfigurationStore(fileURL: url)
+        let loaded = try await freshStore.load()
+        XCTAssertEqual(loaded.appearance, .dark, "updateAppearance 应将 dark 持久化到文件")
+    }
+
     /// 场景 4：schemaVersion 高于当前应用支持版本，应抛出 schemaVersionTooNew(99)
     func test_load_schemaVersionTooNew_throws() async throws {
         let url = tempFile()
