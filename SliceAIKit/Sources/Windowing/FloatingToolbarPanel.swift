@@ -1,7 +1,7 @@
 // SliceAIKit/Sources/Windowing/FloatingToolbarPanel.swift
 import AppKit
-import SwiftUI
 import SliceCore
+import SwiftUI
 
 /// 划词后弹出的紧贴选区浮条（A 模式）
 ///
@@ -17,6 +17,12 @@ public final class FloatingToolbarPanel {
     private let positioner = ScreenAwarePositioner()
     /// 5 秒自动关闭任务，每次 show 都会取消旧任务重新计时
     private var autoDismissTask: Task<Void, Never>?
+    /// 全局 mouseDown 监视器：实现"点 panel 外部即消失"的 PopClip 标准交互
+    ///
+    /// 关键不变量：`NSEvent.addGlobalMonitorForEvents` 不接收本进程内窗口产生
+    /// 的事件。所以点 panel 内的工具按钮、拖动 panel 都不会触发该 monitor，
+    /// 只有点击其他 App / 桌面 / 本 App 其他窗口时才会触发 → 直接 dismiss。
+    private var outsideClickMonitor: Any?
 
     /// 无状态构造器
     public init() {}
@@ -61,13 +67,39 @@ public final class FloatingToolbarPanel {
             guard !Task.isCancelled else { return }
             self?.dismiss()
         }
+        // 安装外部点击监视器，实现"点 panel 外部即消失"
+        installOutsideClickMonitor()
     }
 
     /// 立即关闭浮条并清理状态
     public func dismiss() {
         autoDismissTask?.cancel()
+        removeOutsideClickMonitor()
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    /// 安装全局 mouseDown 监视器；任何 panel 外的点击都会触发 dismiss
+    ///
+    /// global monitor 回调签名是 `@Sendable`，需显式 hop 回 MainActor 才能安全
+    /// 调用 `dismiss()`。监听 left + right + other 三类按下，覆盖三键鼠标 / 触
+    /// 控板的所有 click 来源。
+    private func installOutsideClickMonitor() {
+        // 防御：先移除可能残留的旧 monitor，避免叠加多个回调重复 dismiss
+        removeOutsideClickMonitor()
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor in self?.dismiss() }
+        }
+    }
+
+    /// 移除全局 mouseDown 监视器；幂等
+    private func removeOutsideClickMonitor() {
+        if let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
     }
 
     /// 创建无边框、悬浮于所有 Space 的 NSPanel，关键配置见注释
@@ -83,7 +115,12 @@ public final class FloatingToolbarPanel {
         // canJoinAllSpaces：在任意 Space 都显示；fullScreenAuxiliary：在全屏应用上也可见
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
-        panel.isMovable = false
+        // 允许用户拖动浮条到任意位置
+        // - isMovable: 启用窗口拖动事件
+        // - isMovableByWindowBackground: borderless panel 没有 title bar，必须靠
+        //   背景区拖；按钮区因 NSButton 优先处理 click，所以"按钮可点 / 背景可拖"自然分流
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
         panel.hasShadow = true
         // 让 SwiftUI 的圆角背景透出：设置透明底色 + 非不透明窗体
         panel.backgroundColor = .clear

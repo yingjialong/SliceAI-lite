@@ -1,6 +1,6 @@
 // SliceAIApp/SliceAIApp.swift
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// 应用入口（`@main`）。
 ///

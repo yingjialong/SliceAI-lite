@@ -1,68 +1,108 @@
 // SliceAIKit/Sources/Windowing/ResultPanel.swift
 import AppKit
-import SwiftUI
 import SliceCore
+import SwiftUI
 
-/// 独立浮窗，Markdown 流式渲染 LLM 回复
+/// 流式结果浮窗：选区附近浮出 + 可钉 + 可拖 + 可调整大小
 ///
 /// 用法：
 /// ```swift
 /// let panel = ResultPanel()
-/// panel.open(toolName: "翻译", model: "gpt-4o-mini")
-/// panel.append("Hello")      // 每收到一段 delta 调一次
-/// panel.finish()             // 流结束
+/// panel.open(
+///     toolName: "翻译",
+///     model: "gpt-4o-mini",
+///     anchor: payload.screenPoint,
+///     onDismiss: { streamTask.cancel() }   // 用户主动关闭时取消 LLM 请求
+/// )
+/// panel.append("Hello")     // 每收到一段 delta 调一次
+/// panel.finish()            // 流结束
 /// // 出错时（带恢复动作）：
 /// // panel.fail(with: .provider(.unauthorized),
 /// //            onRetry: { ... }, onOpenSettings: { ... })
 /// ```
-/// 线程模型：整个类 `@MainActor`，所有公开 API 必须在主线程调用。
+///
+/// 行为约定：
+/// - **样式**：borderless + nonactivatingPanel + 圆角；无系统 title bar，
+///   pin / close 由内容区角落的 SwiftUI 按钮承载
+/// - **位置**：用 `ScreenAwarePositioner` 在 selection anchor 附近定位
+/// - **尺寸**：默认 480×340，用户可拖右下/边缘调整；新一次 open 复用上次尺寸
+/// - **钉**：跨 open() 保留 `isPinned` 状态。pin = `level = .statusBar` + 不装
+///   外部点击监视器；非钉 = `level = .floating` + 装 monitor，点 panel 外即
+///   触发 `dismiss()`（同时回调 `onDismiss`，让 AppDelegate cancel stream task）
+///
+/// 线程模型：`@MainActor` 限定，所有公开 API 必须在主线程调用。
 @MainActor
 public final class ResultPanel {
 
-    /// 承载内容的 NSPanel；首次 open 时懒创建，close 后复用（仅 orderOut）
+    /// 承载内容的 NSPanel；首次 open 时懒创建，dismiss 后保留以便复用
     private var panel: NSPanel?
     /// 驱动 SwiftUI 视图的观察对象，open 时 reset、append/finish/fail 时更新
     private let viewModel = ResultViewModel()
+    /// 屏幕边界感知的坐标计算器（与 FloatingToolbarPanel 复用同一实现）
+    private let positioner = ScreenAwarePositioner()
+    /// 全局 mouseDown 监视器；非钉态安装、钉态移除
+    ///
+    /// 关键不变量：`NSEvent.addGlobalMonitorForEvents` 不接收本进程窗口产生
+    /// 的事件，所以点 panel 内按钮、拖动 panel 都不会触发，只有点 panel 外
+    /// （其他 App / 桌面 / 本 App 其他窗口）才触发 → dismiss
+    private var outsideClickMonitor: Any?
+    /// 当前 dismiss 回调；由 `open(...)` 调用方传入，通常用于 cancel 正在跑的
+    /// stream Task。`dismiss()` 内调用一次后置 nil，避免重复 cancel
+    private var onDismiss: (() -> Void)?
+    /// 是否钉住；跨 open() 保留，让用户钉过的窗口在新 tool 触发后仍保持钉住
+    private var isPinned: Bool = false
 
     /// 无状态构造器
     public init() {}
 
-    /// 展示结果窗口；若已存在则复用窗口并清空历史内容。
+    /// 展示结果窗口
     /// - Parameters:
-    ///   - toolName: 当前触发的工具名称（标题栏显示）
-    ///   - model: 当前使用的模型（标题栏副文本显示）
-    public func open(toolName: String, model: String) {
+    ///   - toolName: 当前触发的工具名称（标题栏主标题）
+    ///   - model: 当前使用的模型（标题栏副文本）
+    ///   - anchor: 选区中心（屏幕坐标，左下原点）；用于把 panel 定位到鼠标附近
+    ///   - onDismiss: 用户主动关闭（点关闭按钮 / 点外部）时的回调；通常传入
+    ///     `{ streamTask.cancel() }` 让 AppDelegate 取消正在跑的 LLM 请求
+    public func open(
+        toolName: String,
+        model: String,
+        anchor: CGPoint,
+        onDismiss: (() -> Void)? = nil
+    ) {
+        // 缓存 dismiss 回调；下次 open 时会被覆盖（旧 task 应在那之前自然结束）
+        self.onDismiss = onDismiss
+
+        // 复用上次尺寸（让用户拖拽过的尺寸跨 open 保持）；首次 open 用默认 480×340
+        let size = panel?.frame.size ?? CGSize(width: 480, height: 340)
+
+        // 选锚点所在屏幕；fallback 到主屏；再 fallback 到零矩形避免 nil
+        let screen = NSScreen.screens.first(where: {
+            $0.visibleFrame.contains(anchor)
+        })?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+
+        // 用 positioner 计算 origin：默认在锚点下方 16pt；越界则翻到上方并水平夹紧
+        let origin = positioner.position(anchor: anchor, size: size, screen: screen, offset: 16)
+
         if panel == nil {
-            // 初始尺寸固定 560×400，用户可后续拖拽调整（styleMask 含 .resizable）
-            let size = CGSize(width: 560, height: 400)
-            // 默认停靠在主屏右上角内 40pt 处，避开刘海与菜单栏
-            let origin: CGPoint
-            if let screen = NSScreen.main?.visibleFrame {
-                origin = CGPoint(
-                    x: screen.maxX - size.width - 40,
-                    y: screen.maxY - size.height - 40
-                )
-            } else {
-                origin = CGPoint(x: 100, y: 100)
-            }
-            let panel = NSPanel(
-                contentRect: NSRect(origin: origin, size: size),
-                styleMask: [.titled, .closable, .resizable, .utilityWindow],
-                backing: .buffered, defer: false
-            )
-            // floating 级别够用——结果窗希望在其他 App 之上，但不抢 statusBar
-            panel.level = .floating
-            panel.title = "SliceAI"
-            // 关闭按钮走 orderOut，不释放引用，下次 open 继续复用
-            panel.isReleasedWhenClosed = false
-            let hosting = NSHostingView(rootView: ResultContent(viewModel: viewModel))
-            hosting.frame = NSRect(origin: .zero, size: size)
-            panel.contentView = hosting
-            self.panel = panel
+            // 首次创建 panel
+            panel = makePanel(size: size, origin: origin)
+        } else {
+            // 复用：仅更新位置（保留用户拖拽过的尺寸）
+            panel?.setFrameOrigin(origin)
         }
-        // 每次 open 都把 ViewModel 清空，避免上一次结果残留
+
+        // 重置 viewModel 的内容字段；onTogglePin / onClose 在每次 open 重新绑定
+        // 以确保 weak self 引用始终指向当前实例
         viewModel.reset(toolName: toolName, model: model)
+        viewModel.isPinned = isPinned
+        viewModel.onTogglePin = { [weak self] in
+            self?.togglePin()
+        }
+        viewModel.onClose = { [weak self] in
+            self?.dismiss()
+        }
         panel?.makeKeyAndOrderFront(nil)
+        // 应用 pin 状态：设置 level + 装/卸 outside-click monitor
+        applyPinState()
     }
 
     /// 追加一段流式 delta 到结果区
@@ -97,9 +137,104 @@ public final class ResultPanel {
         )
     }
 
-    /// 关闭窗口（仅隐藏，保留 NSPanel 实例以便下次快速复用）
+    /// 关闭窗口（兼容旧 API；行为同 `dismiss()`）
     public func close() {
+        dismiss()
+    }
+
+    /// 主动关闭浮窗：触发 onDismiss 回调（cancel stream）+ 清理监视器 + 隐藏 panel
+    ///
+    /// 幂等：多次调用安全。`onDismiss` 只调用一次（调用后置 nil），避免重复 cancel。
+    public func dismiss() {
+        // 先回调让外部取消 stream，再隐藏 panel；顺序重要——回调内若有耗时
+        // 操作也不会阻塞 panel 消失的视觉响应（onDismiss 通常是 task.cancel()，瞬时）
+        onDismiss?()
+        onDismiss = nil
+        removeOutsideClickMonitor()
         panel?.orderOut(nil)
+    }
+
+    // MARK: - 钉切换 + 监视器
+
+    /// 切换钉/非钉状态；通过 viewModel 同步给 SwiftUI 按钮的图标
+    private func togglePin() {
+        isPinned.toggle()
+        viewModel.isPinned = isPinned
+        applyPinState()
+    }
+
+    /// 应用当前 pin 状态：钉 → statusBar 层 + 不监听外部点击；非钉 → floating + 监听
+    private func applyPinState() {
+        if isPinned {
+            // statusBar 层确保钉住的窗口在其他 floating 窗口（包括工具栏浮条）之上
+            panel?.level = .statusBar
+            removeOutsideClickMonitor()
+        } else {
+            panel?.level = .floating
+            installOutsideClickMonitor()
+        }
+    }
+
+    /// 安装全局 mouseDown 监视器；任何 panel 外的点击都触发 dismiss
+    ///
+    /// 监听 left + right + other 三类按下，覆盖三键鼠标 / 触控板的所有 click 来源。
+    /// 回调签名是 `@Sendable`，需显式跳回 MainActor 才能安全调用 `dismiss()`。
+    private func installOutsideClickMonitor() {
+        // 防御：先移除可能残留的旧 monitor，避免叠加多个回调重复 dismiss
+        removeOutsideClickMonitor()
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor in self?.dismiss() }
+        }
+    }
+
+    /// 移除全局 mouseDown 监视器；幂等
+    private func removeOutsideClickMonitor() {
+        if let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
+    }
+
+    // MARK: - Panel 构造
+
+    /// 创建 borderless + nonactivatingPanel + resizable 的 NSPanel
+    ///
+    /// - `borderless`：去掉系统 title bar，pin / close 由内容区按钮承载
+    /// - `nonactivatingPanel`：弹出时不抢占焦点，不打断用户在前台 App 的工作
+    /// - `resizable`：允许从 4 边 / 4 角拖动调整大小（受 minSize / maxSize 约束）
+    /// - `isMovableByWindowBackground`：背景区可拖；按钮区因 NSButton 优先处理
+    ///   click，"按钮可点 / 背景可拖"自然分流
+    private func makePanel(size: CGSize, origin: CGPoint) -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(origin: origin, size: size),
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
+            backing: .buffered, defer: false
+        )
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        // canJoinAllSpaces：在任意 Space 显示；fullScreenAuxiliary：全屏 App 上也可见
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
+        panel.hasShadow = true
+        // 让 SwiftUI 圆角背景透出：透明底色 + 非不透明窗体
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        // resize 范围约束：避免拖到完全不可用 / 撑满屏幕
+        panel.minSize = NSSize(width: 320, height: 200)
+        panel.maxSize = NSSize(width: 1200, height: 800)
+        // 关闭按钮走 orderOut，不释放窗口实例，下次 open 继续复用
+        panel.isReleasedWhenClosed = false
+
+        let hosting = NSHostingView(rootView: ResultContent(viewModel: viewModel))
+        hosting.frame = NSRect(origin: .zero, size: size)
+        // SwiftUI hosting 跟着 panel resize 自动伸缩
+        hosting.autoresizingMask = [.width, .height]
+        panel.contentView = hosting
+        return panel
     }
 }
 
@@ -108,8 +243,9 @@ public final class ResultPanel {
 /// 作为 `ObservableObject` 在主 actor 驱动 UI；`@Published` 字段由 `ResultPanel`
 /// 公开方法改写，SwiftUI 视图通过 `@ObservedObject` 订阅变化。
 ///
-/// `onRetry` / `onOpenSettings` 为恢复动作回调，**不**标注 `@Published`——它们不应
-/// 触发 SwiftUI diff，只需要在主线程可读可写即可（类已 `@MainActor` 限定）。
+/// `onRetry` / `onOpenSettings` / `onTogglePin` / `onClose` 为动作回调，
+/// **不**标注 `@Published`——它们不应触发 SwiftUI diff，只需要在主线程可读可写
+/// 即可（类已 `@MainActor` 限定）。
 @MainActor
 final class ResultViewModel: ObservableObject {
     /// 当前工具名（标题栏主标题）
@@ -126,13 +262,21 @@ final class ResultViewModel: ObservableObject {
     @Published var errorDetail: String?
     /// 错误详情折叠区是否展开；绑定到 DisclosureGroup
     @Published var showDetail: Bool = false
+    /// 是否钉住；同步自 ResultPanel.isPinned，用于切换 pin 按钮的图标
+    @Published var isPinned: Bool = false
 
     /// "重试"动作回调；nil 表示当前错误不支持重试
     var onRetry: (@MainActor () -> Void)?
     /// "打开设置"动作回调；nil 表示当前错误不需要跳设置
     var onOpenSettings: (@MainActor () -> Void)?
+    /// "钉/取消钉"切换回调；由 ResultPanel 在每次 open 时绑定
+    var onTogglePin: (@MainActor () -> Void)?
+    /// "关闭窗口"回调；由 ResultPanel 在每次 open 时绑定
+    var onClose: (@MainActor () -> Void)?
 
     /// 重置视图状态为"新一次对话开始"
+    /// 注意：onTogglePin / onClose 由 `ResultPanel.open(...)` 在 reset 后单独绑定，
+    /// 这里不要清掉，否则按钮会失去响应
     func reset(toolName: String, model: String) {
         // 基本字段：标题 + 模型 + 清空上次文本、进入流式态
         self.toolName = toolName
@@ -143,7 +287,7 @@ final class ResultViewModel: ObservableObject {
         self.errorMessage = nil
         self.errorDetail = nil
         self.showDetail = false
-        // 恢复动作也要清掉，防止误触发上一次的 closure
+        // 恢复动作清掉，防止误触发上一次的 closure
         self.onRetry = nil
         self.onOpenSettings = nil
     }
@@ -178,24 +322,13 @@ final class ResultViewModel: ObservableObject {
     }
 }
 
-/// 结果窗内部视图：标题栏 + 正文（Markdown 或错误）+ 底部操作区
+/// 结果窗内部视图：顶栏（pin + 标题 + close）+ 正文（Markdown 或错误）+ 底部操作区
 private struct ResultContent: View {
     @ObservedObject var viewModel: ResultViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 顶部标题栏：工具名 + 模型名，左对齐
-            HStack {
-                Text(viewModel.toolName)
-                    .font(.system(size: 13, weight: .semibold))
-                Text("· \(viewModel.model)")
-                    .font(.system(size: 11))
-                    .foregroundColor(PanelColors.textSecondary)
-                Spacer()
-            }
-            .foregroundColor(PanelColors.text)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            headerBar
             Divider()
             // 正文区域：错误优先、否则渲染流式 Markdown
             if let err = viewModel.errorMessage {
@@ -210,6 +343,50 @@ private struct ResultContent: View {
         }
         .background(PanelColors.background)
         .foregroundColor(PanelColors.text)
+        .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius))
+    }
+
+    /// 顶栏：左侧 pin 按钮 + 工具名 + 模型名 / 右侧 close 按钮
+    ///
+    /// 由于 panel 是 borderless（无系统 title bar），pin / close 都由内容区
+    /// SwiftUI 按钮承载，符合"浮条美学"。按钮之外的区域可拖（panel
+    /// `isMovableByWindowBackground = true`）。
+    private var headerBar: some View {
+        HStack(spacing: 8) {
+            // pin 按钮：图标随状态切换 pin / pin.fill；钉时填充蓝色提示
+            Button {
+                viewModel.onTogglePin?()
+            } label: {
+                Image(systemName: viewModel.isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 12))
+                    .foregroundColor(viewModel.isPinned ? PanelColors.accent : PanelColors.textSecondary)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .help(viewModel.isPinned ? "取消钉住" : "钉住窗口（点击外部不消失）")
+
+            Text(viewModel.toolName)
+                .font(.system(size: 13, weight: .semibold))
+            Text("· \(viewModel.model)")
+                .font(.system(size: 11))
+                .foregroundColor(PanelColors.textSecondary)
+            Spacer()
+
+            // close 按钮：触发 dismiss → 调用 onDismiss 回调 → 取消 stream task
+            Button {
+                viewModel.onClose?()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(PanelColors.textSecondary)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .help("关闭")
+        }
+        .foregroundColor(PanelColors.text)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     /// 错误状态主视图：红色 banner + 折叠详情区

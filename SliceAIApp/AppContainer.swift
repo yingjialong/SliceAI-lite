@@ -1,13 +1,13 @@
 // SliceAIApp/AppContainer.swift
-import Foundation
 import AppKit
-import SliceCore
-import LLMProviders
-import SelectionCapture
+import Foundation
 import HotkeyManager
-import Windowing
+import LLMProviders
 import Permissions
+import SelectionCapture
 import SettingsUI
+import SliceCore
+import Windowing
 
 /// 应用的依赖注入组合根（Composition Root）。
 ///
