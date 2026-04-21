@@ -42,9 +42,11 @@ public final class FloatingToolbarPanel {
     ///   - onPick: 用户点击某工具时回调
     public func show(tools: [Tool], anchor: CGPoint, onPick: @escaping (Tool) -> Void) {
         // 宽度计算：把手(14pt) + 分隔线(1pt + 3pt×2 padding) = 21pt
-        // 每个按钮 30pt + 按钮间距 2pt + 左右 padding 4pt×2
+        // HStack 子项：DragHandle + N 个按钮 = N+1 项，间距数量 N
+        // 每个按钮 30pt，按钮间距（含 DragHandle↔首按钮）= N * 2pt + 左右 padding 4pt×2
         let handleWidth: CGFloat = 14 + 7  // 把手 + 分隔线区域宽度
-        let buttonsWidth = CGFloat(tools.count) * 30 + CGFloat(max(0, tools.count - 1)) * 2
+        let buttonSpacing: CGFloat = 2
+        let buttonsWidth = CGFloat(tools.count) * (30 + buttonSpacing)
         let padding: CGFloat = 4
         let width = handleWidth + buttonsWidth + padding * 2
         let height: CGFloat = 30 + padding * 2  // 按钮高度 + 上下 padding
