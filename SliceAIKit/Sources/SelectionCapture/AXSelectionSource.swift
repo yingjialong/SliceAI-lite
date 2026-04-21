@@ -39,7 +39,10 @@ public struct AXSelectionSource: SelectionSource {
         let selErr = AXUIElementCopyAttributeValue(
             element, kAXSelectedTextAttribute as CFString, &selected
         )
-        guard selErr == .success, let text = selected as? String, !text.isEmpty else {
+        // 去除首尾空白后判空：防止部分应用在 focused 输入框为空时仍返回单个空格 / 制表符 /
+        // 换行，导致被误判为"有选中文字"并触发浮条。
+        guard selErr == .success, let text = selected as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 

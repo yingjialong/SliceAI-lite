@@ -38,6 +38,17 @@ public struct SelectionService: Sendable {
         return nil
     }
 
+    /// 仅尝试 primary（通常是 AX）捕获，不走 fallback（通常是 Cmd+C）
+    ///
+    /// 设计用途：鼠标全局监听等"被动触发"路径，避免 Cmd+C 的副作用
+    /// （剪贴板抖动 / 错误弹出浮条）。主动路径（命令面板 ⌥Space）仍应使用
+    /// `capture()` 以获得更高的可达性（对不支持 AX 的应用也能读到文本）。
+    ///
+    /// 返回值与 `capture()` 一致；不抛错（primary 的错误已在 tryCapture 里被静默降级为 nil）。
+    public func captureFromPrimaryOnly() async -> SelectionPayload? {
+        return await tryCapture(from: primary)
+    }
+
     /// 尝试从单个 source 读取并转换为 SelectionPayload；任何失败（抛错 / nil）都返回 nil
     ///
     /// 错误在此处被静默降级：对外层只关心"这条路径能不能拿到结果"，

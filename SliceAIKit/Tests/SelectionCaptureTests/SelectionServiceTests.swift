@@ -77,4 +77,31 @@ final class SelectionServiceTests: XCTestCase {
         let payload = try await service.capture()
         XCTAssertEqual(payload?.text, "hello")
     }
+
+    /// captureFromPrimaryOnly 路径：主路径为空时必须返回 nil，**不能**触碰 fallback。
+    /// 这是避免被动触发路径（mouseUp）误用 Cmd+C 的关键契约。
+    func test_captureFromPrimaryOnly_skipsFallbackWhenPrimaryReturnsNil() async {
+        let fallbackResult = SelectionReadResult(
+            text: "fallback-should-not-be-used",
+            appBundleID: "x", appName: "X",
+            url: nil, screenPoint: .zero, source: .clipboardFallback
+        )
+        let service = SelectionService(
+            primary: YieldingSource(result: nil),
+            fallback: YieldingSource(result: fallbackResult)
+        )
+        let payload = await service.captureFromPrimaryOnly()
+        XCTAssertNil(payload, "captureFromPrimaryOnly 必须不走 fallback")
+    }
+
+    /// captureFromPrimaryOnly 路径：主路径有结果时正常返回
+    func test_captureFromPrimaryOnly_returnsPrimaryWhenAvailable() async {
+        let service = SelectionService(
+            primary: YieldingSource(result: sample),
+            fallback: YieldingSource(result: nil)
+        )
+        let payload = await service.captureFromPrimaryOnly()
+        XCTAssertEqual(payload?.text, "hello")
+        XCTAssertEqual(payload?.source, .accessibility)
+    }
 }

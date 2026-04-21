@@ -26,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 声明为 Any? 而非 NSObject? 是 AppKit API 的约定
     private var globalMouseMonitor: Any?
 
+    /// 全局鼠标按下监视器句柄；用于记录拖拽起点以区分单击与划词
+    private var mouseDownMonitor: Any?
+
+    /// 最近一次 mouseDown 的屏幕坐标；mouseUp 时用于计算位移判断是否为拖拽
+    /// 在 @MainActor 上读写，避免与 mouseUp 回调产生竞态
+    private var lastMouseDownLocation: CGPoint?
+
     /// mouseUp 之后的 debounce Task，保证同一次操作只触发一次划词捕获
     private var debounceTask: Task<Void, Never>?
 
@@ -88,12 +95,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 安装全局鼠标抬起监视器；回调内进入 debounce 流程
+    /// 安装全局鼠标监视器；同时追踪 mouseDown 起点与 mouseUp 终点
+    ///
+    /// 实现要点：
+    ///   - 仅监听 mouseUp 会导致"任何单击"都进入 debounce 流程，产生 PopClip 类应用
+    ///     不应出现的"点一下就弹浮条"的交互。
+    ///   - 本方法改为同时监听 leftMouseDown（记录起点）与 leftMouseUp（算位移），
+    ///     只有位移 ≥ 5pt（拖拽）才继续后续流程；小于阈值视为单击/抖动直接丢弃。
+    ///   - `global monitor` 不会收到本应用的事件，这正是划词场景需要的；
+    ///     监视器回调是 @Sendable，需显式跳回 MainActor 再读写 lastMouseDownLocation。
     private func installMouseMonitor() {
-        // 注意：global monitor 不会收到本应用的事件，这正是划词场景需要的
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
-            // 监视器回调为 @Sendable，显式跳回主线程再调用业务方法
-            Task { @MainActor in self?.onMouseUp() }
+        // 记录 mouseDown 起点；locationInWindow 在全局监视器语境下即为屏幕坐标
+        mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] ev in
+            let loc = ev.locationInWindow
+            Task { @MainActor in
+                self?.lastMouseDownLocation = loc
+            }
+        }
+        // mouseUp：若位移 < 5pt 判定为单击，不进入 debounce；≥ 5pt 认为是划词拖拽
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] ev in
+            let upLoc = ev.locationInWindow
+            Task { @MainActor in
+                guard let self else { return }
+                guard let downLoc = self.lastMouseDownLocation else { return }
+                // 无论是否触发后续流程，都清空起点防止下一次 mouseUp 误用旧值
+                self.lastMouseDownLocation = nil
+                let dx = upLoc.x - downLoc.x
+                let dy = upLoc.y - downLoc.y
+                let dist = (dx * dx + dy * dy).squareRoot()
+                // 阈值 5pt：过滤单击与轻微抖动，仅拖拽选区进入 onMouseUp
+                guard dist >= 5 else { return }
+                self.onMouseUp()
+            }
         }
     }
 
@@ -118,8 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 尝试捕获选中文字并按配置过滤后展示浮条
     /// - Parameter cfg: 触发时刻的配置快照，避免与用户编辑产生竞态
     private func tryCaptureAndShowToolbar(_ cfg: Configuration) async {
-        // 捕获失败或为空都直接退出；单路失败已在 SelectionService 内被静默降级
-        guard let payload = try? await container.selectionService.capture() else { return }
+        // 鼠标抬起路径只走 AX（primary）；不触发 Cmd+C fallback 避免抢用户剪贴板
+        // 原因：被动触发下若 AX 为空还走 Cmd+C，会在无选中时把当前剪贴板内容当成"选中"
+        // 从而产生虚假浮条。主动路径（showCommandPalette）仍然使用 capture() 以获得更高可达性
+        guard let payload = await container.selectionService.captureFromPrimaryOnly() else { return }
         // 黑名单应用：命中则忽略该次触发
         if cfg.appBlocklist.contains(payload.appBundleID) { return }
         // 选区过短：避免偶发的 1-2 字选中误触发
