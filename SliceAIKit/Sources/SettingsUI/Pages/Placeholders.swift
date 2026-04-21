@@ -1,8 +1,8 @@
 // SliceAIKit/Sources/SettingsUI/Pages/Placeholders.swift
 //
 // 本文件集中放置尚未实施的设置页占位视图。
-// Task 19 会填充 Hotkey / Trigger / Permissions / About；
-// Task 20 会填充 Providers / Tools。届时直接替换对应 struct 的 body 即可。
+// Task 19 已填充 Hotkey / Trigger / Permissions / About（见对应文件）；
+// Task 20 会填充 Providers / Tools，届时替换以下两个 struct 的 body 即可。
 import DesignSystem
 import SliceCore
 import SwiftUI
@@ -47,84 +47,6 @@ public struct ToolsSettingsPage: View {
     public var body: some View {
         SettingsPageShell(title: "Tools", subtitle: "管理工具列表与提示词。") {
             PlaceholderCard(icon: "hammer", label: "Tools 设置", task: "Task 20")
-        }
-    }
-}
-
-// MARK: - Hotkey
-
-/// 快捷键设置页占位（Task 19 填充）
-///
-/// 当前展示"待实施"提示，Task 19 完成后替换为 HotkeyEditorView 集成。
-public struct HotkeySettingsPage: View {
-
-    /// 设置视图模型，Task 19 实施时用于绑定热键配置
-    @ObservedObject private var viewModel: SettingsViewModel
-
-    /// 构造快捷键占位页
-    public init(viewModel: SettingsViewModel) {
-        self.viewModel = viewModel
-    }
-
-    public var body: some View {
-        SettingsPageShell(title: "快捷键", subtitle: "配置全局快捷键。") {
-            PlaceholderCard(icon: "keyboard", label: "快捷键设置", task: "Task 19")
-        }
-    }
-}
-
-// MARK: - Trigger
-
-/// 触发行为设置页占位（Task 19 填充）
-///
-/// 当前展示"待实施"提示，Task 19 完成后替换为划词/命令面板触发开关与阈值。
-public struct TriggerSettingsPage: View {
-
-    /// 设置视图模型，Task 19 实施时用于绑定触发行为配置
-    @ObservedObject private var viewModel: SettingsViewModel
-
-    /// 构造触发行为占位页
-    public init(viewModel: SettingsViewModel) {
-        self.viewModel = viewModel
-    }
-
-    public var body: some View {
-        SettingsPageShell(title: "触发行为", subtitle: "控制划词与命令面板的触发策略。") {
-            PlaceholderCard(icon: "cursorarrow.click", label: "触发行为设置", task: "Task 19")
-        }
-    }
-}
-
-// MARK: - Permissions
-
-/// 权限设置页占位（Task 19 填充）
-///
-/// 当前展示"待实施"提示，Task 19 完成后替换为辅助功能权限状态 + 引导入口。
-public struct PermissionsSettingsPage: View {
-
-    /// 构造权限占位页
-    public init() {}
-
-    public var body: some View {
-        SettingsPageShell(title: "权限", subtitle: "管理应用所需的系统权限。") {
-            PlaceholderCard(icon: "lock.shield", label: "权限设置", task: "Task 19")
-        }
-    }
-}
-
-// MARK: - About
-
-/// 关于页占位（Task 19 填充）
-///
-/// 当前展示"待实施"提示，Task 19 完成后替换为版本信息、开源声明与链接。
-public struct AboutSettingsPage: View {
-
-    /// 构造关于页占位
-    public init() {}
-
-    public var body: some View {
-        SettingsPageShell(title: "关于", subtitle: "版本信息与开源声明。") {
-            PlaceholderCard(icon: "info.circle", label: "关于", task: "Task 19")
         }
     }
 }

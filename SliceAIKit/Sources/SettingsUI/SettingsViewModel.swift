@@ -87,6 +87,33 @@ public final class SettingsViewModel: ObservableObject {
         try await store.update(configuration)
     }
 
+    /// 将当前 configuration.triggers 写回磁盘，供触发行为页 onChange 立即持久化
+    ///
+    /// 调用方将 configuration.triggers 的各字段更新后再调用此方法；
+    /// IO 失败仅打日志，不向上抛错（内存态已更新，用户体验优先）。
+    public func saveTriggers() async {
+        // 内存态已由调用方更新，直接写回磁盘
+        do {
+            try await store.update(configuration)
+            print("[SettingsViewModel] saveTriggers: persisted OK")
+        } catch {
+            print("[SettingsViewModel] saveTriggers: persist failed – \(error.localizedDescription)")
+        }
+    }
+
+    /// 将当前 configuration.hotkeys 写回磁盘，供快捷键页 onSubmit 立即持久化
+    ///
+    /// IO 失败仅打日志，不阻断 UI（下次 reload 以磁盘为准）。
+    public func saveHotkeys() async {
+        // 内存态已由绑定更新，直接写回磁盘
+        do {
+            try await store.update(configuration)
+            print("[SettingsViewModel] saveHotkeys: persisted OK")
+        } catch {
+            print("[SettingsViewModel] saveHotkeys: persist failed – \(error.localizedDescription)")
+        }
+    }
+
     /// 为指定 Provider 写入 API Key
     ///
     /// Keychain 的 account 必须通过 `Provider.keychainAccount` 解析自 `apiKeyRef`，
