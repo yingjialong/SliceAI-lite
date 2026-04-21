@@ -1,6 +1,6 @@
-import Foundation
-import ApplicationServices
 import AppKit
+import ApplicationServices
+import Foundation
 
 /// 监控 Accessibility 权限状态。
 ///
@@ -56,7 +56,10 @@ public final class AccessibilityMonitor: ObservableObject {
     }
 
     /// 从 AX API 读取并发布最新的权限状态。
-    private func refresh() {
+    ///
+    /// 设为 public 以便外部（如 OnboardingFlow 的"立即检测"按钮）强制刷新，
+    /// 无需等待下一个轮询周期（1s）。
+    public func refresh() {
         isTrusted = AXIsProcessTrusted()
     }
 }

@@ -404,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let win = NSWindow(contentViewController: hosting)
         win.title = "Welcome to SliceAI"
         win.styleMask = [.titled]
-        win.setContentSize(NSSize(width: 480, height: 340))
+        win.setContentSize(NSSize(width: 560, height: 520))
         win.isReleasedWhenClosed = false
         win.center()
         onboardingWindow = win
