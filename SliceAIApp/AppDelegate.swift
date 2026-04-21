@@ -392,12 +392,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// 显示首次启动引导：权限授予后回调把 API Key 存入 Keychain 并接线运行时
+    /// 显示首次启动引导：权限授予后回调关闭窗口并接线运行时
+    ///
+    /// Provider / API Key 的配置已从 Onboarding 移除，用户需在「设置 → Providers」
+    /// 中自行添加。首次划词若未配置 Provider，会命中 ResultPanel 的错误态，
+    /// 其"打开设置"按钮会引导用户到设置页。
     func showOnboarding() {
         let view = OnboardingFlow(
             accessibilityMonitor: container.accessibilityMonitor,
-            onFinish: { [weak self] apiKey in
-                Task { @MainActor in await self?.finishOnboarding(apiKey: apiKey) }
+            onFinish: { [weak self] in
+                Task { @MainActor in self?.finishOnboarding() }
             }
         )
         // 注入 themeManager 使 OnboardingFlow 内部视图也能读取当前主题
@@ -413,12 +417,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Onboarding 完成：写入 API Key（若有）后接线运行时，并刷新菜单栏图标状态
-    /// - Parameter apiKey: 用户填写的 Key；空串表示"稍后再说"，不写入 Keychain
-    private func finishOnboarding(apiKey: String) async {
-        if !apiKey.isEmpty {
-            try? await container.keychain.writeAPIKey(apiKey, providerId: "openai-official")
-        }
+    /// Onboarding 完成：关闭窗口、接线运行时并刷新菜单栏图标状态
+    private func finishOnboarding() {
         onboardingWindow?.close()
         onboardingWindow = nil
         wireRuntime()
