@@ -9,7 +9,8 @@ import SwiftUI
 /// 负责：
 ///   - 持有当前 `Configuration` 并在 `@Published` 下驱动 SwiftUI 刷新；
 ///   - 通过注入的 `ConfigurationProviding` 做加载/持久化；
-///   - 通过注入的 `KeychainAccessing` 读写 API Key，避免把密钥塞进 Configuration。
+///   - 通过注入的 `KeychainAccessing` 读写 API Key，避免把密钥塞进 Configuration；
+///   - 通过 `appearance` 字段单独暴露外观模式，配合 `setAppearance(_:)` 立即持久化。
 ///
 /// 类型被标记为 `@MainActor`，保证 `@Published` 属性读写只发生在主线程，
 /// 并兼容 Swift 6 严格并发检查。
@@ -18,6 +19,12 @@ public final class SettingsViewModel: ObservableObject {
 
     /// 当前正在编辑的完整配置；UI 通过 `$viewModel.configuration.xxx` 做双向绑定
     @Published public var configuration: Configuration
+
+    /// 当前外观模式（从 configuration.appearance 同步），供 AppearanceSettingsPage 绑定
+    ///
+    /// 与 `configuration.appearance` 保持同步：`reload()` 时一起更新，
+    /// `setAppearance(_:)` 时同时更新两者。设置该值会立即持久化，无需手动调用 save()。
+    @Published public var appearance: AppearanceMode
 
     /// 配置持久化抽象，生产环境通常注入 `FileConfigurationStore`
     private let store: any ConfigurationProviding
@@ -35,16 +42,43 @@ public final class SettingsViewModel: ObservableObject {
     public init(store: any ConfigurationProviding, keychain: any KeychainAccessing) {
         self.store = store
         self.keychain = keychain
-        self.configuration = DefaultConfiguration.initial()
+        // 先用默认值占位，reload() 异步完成后更新为真实磁盘值
+        let initial = DefaultConfiguration.initial()
+        self.configuration = initial
+        self.appearance = initial.appearance
         // 使用 [weak self] 捕获弱引用，避免在 Swift 6 严格并发下 self 在 init
         // 尚未完成时被强引用持有的诊断
         Task { [weak self] in await self?.reload() }
     }
 
+    /// 设置外观模式并立即持久化，不需要调用 save()
+    ///
+    /// 实现顺序：
+    ///   1. 更新 `configuration.appearance` 保持两者同步；
+    ///   2. 更新独立发布的 `appearance` 属性触发 UI 刷新；
+    ///   3. 调用 store.update 写回磁盘（允许失败静默处理，UI 已经切换，用户下次启动 reload 会同步）。
+    /// - Parameter mode: 目标外观模式
+    public func setAppearance(_ mode: AppearanceMode) async {
+        // 更新两处发布属性保持同步
+        configuration.appearance = mode
+        appearance = mode
+        // 写回磁盘；IO 失败不阻断 UI（下次启动 reload 会以磁盘为准）
+        do {
+            try await store.update(configuration)
+        } catch {
+            // 记录日志方便调试，不向上抛错（UI 已切换，用户体验优先）
+            print("[SettingsViewModel] setAppearance: persist failed – \(error.localizedDescription)")
+        }
+    }
+
     /// 从 store 拉取最新 Configuration 覆盖当前内存态
+    ///
+    /// 同时同步 `appearance` 独立属性，保证两处数据一致。
     public func reload() async {
         let cfg = await store.current()
         self.configuration = cfg
+        // 同步独立的 appearance 发布属性，使 AppearanceSettingsPage 刷新
+        self.appearance = cfg.appearance
     }
 
     /// 将当前内存态 Configuration 写回 store
