@@ -34,9 +34,10 @@ public struct DragHandle: View {
                 // 列/行间距
                 let step: CGFloat = 4
                 // 计算整体点阵居中的起始坐标
-                // 2 列宽度 = dot.width + step（列间距），3 行高度 = dot.height * 3 + step * 2
+                // 2 列占用宽度 = dot.width + step（列间距）
+                // 3 行占用高度 = step*(rows-1) + dot.height = 4*2 + 1.8 = 9.8
                 let originX = (size.width - dot.width - step) / 2
-                let originY = (size.height - dot.height * 3 - step * 2) / 2
+                let originY = (size.height - dot.height - step * 2) / 2
                 for col in 0..<2 {
                     for row in 0..<3 {
                         let rect = CGRect(

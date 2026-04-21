@@ -90,9 +90,9 @@ public struct ThinkingDots: View {
                 try? await Task.sleep(nanoseconds: 470_000_000)
                 // Task 被取消后 sleep 可能提前返回，此处再次检查
                 guard !Task.isCancelled else { break }
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    phase = (phase + 1) % 3
-                }
+                // Circle 上已有 .animation(.easeInOut(duration: 0.35), value: phase) 修饰符
+                // 声明式 modifier 会自动处理动画，无需命令式 withAnimation 包裹
+                phase = (phase + 1) % 3
             }
         }
     }
