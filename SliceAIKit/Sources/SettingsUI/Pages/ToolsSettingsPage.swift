@@ -110,8 +110,10 @@ public struct ToolsSettingsPage: View {
     /// 完整工具列表（含内联编辑展开区）
     private var toolList: some View {
         VStack(spacing: SliceSpacing.sm) {
-            ForEach($viewModel.configuration.tools) { $tool in
-                toolListItem(for: $tool)
+            // 用 indices 驱动 ForEach 是为了拿到 index 做排序按钮的 disable 判定；
+            // 同时通过 $viewModel.configuration.tools[index] 构造 binding 给 editor
+            ForEach(viewModel.configuration.tools.indices, id: \.self) { index in
+                toolListItem(for: $viewModel.configuration.tools[index], index: index)
             }
         }
     }
@@ -119,10 +121,14 @@ public struct ToolsSettingsPage: View {
     /// 单个工具列表项（行 + 展开编辑区 + 背景描边）
     ///
     /// 独立为方法以避免 Swift 类型推导超时（toolList ForEach body 过深）。
+    /// - Parameters:
+    ///   - binding: Tool 的双向绑定，editor 通过此 binding 修改 configuration
+    ///   - index: 当前工具在 tools 数组里的位置，用于上移/下移按钮的 disable 判定
     @ViewBuilder
-    private func toolListItem(for binding: Binding<Tool>) -> some View {
+    private func toolListItem(for binding: Binding<Tool>, index: Int) -> some View {
         let tool = binding.wrappedValue
         let isExpanded = expandedId == tool.id
+        let total = viewModel.configuration.tools.count
         // 计算描边颜色，避免在 overlay 闭包里做三目表达式
         let strokeColor = isExpanded ? SliceColor.accent.opacity(0.4) : SliceColor.border
 
@@ -130,12 +136,18 @@ public struct ToolsSettingsPage: View {
             // 列表行
             ToolRow(
                 tool: tool,
-                isExpanded: isExpanded
+                isExpanded: isExpanded,
+                canMoveUp: index > 0,
+                canMoveDown: index < total - 1
             ) {
                 // 点击同行收起，点击另一行切换
                 withAnimation(SliceAnimation.standard) {
                     expandedId = isExpanded ? nil : tool.id
                 }
+            } onMoveUp: {
+                moveTool(from: index, to: index - 1)
+            } onMoveDown: {
+                moveTool(from: index, to: index + 1)
             } onDelete: {
                 // 不直接删，先设置 pendingDeleteId 弹出 alert 二次确认
                 pendingDeleteId = tool.id
@@ -218,6 +230,30 @@ public struct ToolsSettingsPage: View {
         }
     }
 
+    /// 上移/下移工具：直接 swapAt 数组位置后异步持久化
+    ///
+    /// 工具的数组顺序即浮条显示优先级（前面的优先展示），此方法是"Tools 页优先级排序"的入口
+    /// - Parameters:
+    ///   - from: 源索引
+    ///   - to: 目标索引
+    private func moveTool(from: Int, to: Int) {
+        // 边界防御：防止越界（理论上 row 按钮已 disable，但多一层兜底）
+        let tools = viewModel.configuration.tools
+        guard tools.indices.contains(from), tools.indices.contains(to) else { return }
+        print("[ToolsSettingsPage] moveTool: from=\(from) to=\(to)")
+        withAnimation(SliceAnimation.standard) {
+            viewModel.configuration.tools.swapAt(from, to)
+        }
+        Task {
+            do {
+                try await viewModel.save()
+                print("[ToolsSettingsPage] moveTool: saved OK")
+            } catch {
+                print("[ToolsSettingsPage] moveTool: save failed – \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// 实际执行删除（alert 确认后才调用）
     private func performDelete(id: String) {
         print("[ToolsSettingsPage] performDelete: id=\(id)")
@@ -241,9 +277,10 @@ public struct ToolsSettingsPage: View {
 
 // MARK: - ToolRow
 
-/// 工具列表行：图标 + 名称 + 描述 + 展开 chevron
+/// 工具列表行：图标 + 名称 + 描述 + 排序按钮 + 展开 chevron
 ///
-/// 作为纯展示组件，点击事件通过 onToggle / onDelete 回调向上传递。
+/// 作为纯展示组件，点击事件通过 onToggle / onMoveUp / onMoveDown / onDelete 回调向上传递。
+/// 工具的数组顺序即浮条显示优先级——越靠前在浮条里出现越早，排序按钮直接对应这个顺序。
 private struct ToolRow: View {
 
     /// 当前行对应的 Tool（只读展示）
@@ -252,8 +289,20 @@ private struct ToolRow: View {
     /// 当前行是否展开
     let isExpanded: Bool
 
+    /// 是否可上移（index > 0）；false 时 ↑ 按钮 disabled 且灰化
+    let canMoveUp: Bool
+
+    /// 是否可下移（index < total - 1）；false 时 ↓ 按钮 disabled 且灰化
+    let canMoveDown: Bool
+
     /// 点击行时的切换回调
     let onToggle: () -> Void
+
+    /// 点击"上移"按钮的回调
+    let onMoveUp: () -> Void
+
+    /// 点击"下移"按钮的回调
+    let onMoveDown: () -> Void
 
     /// 点击删除按钮的回调
     let onDelete: () -> Void
@@ -279,6 +328,10 @@ private struct ToolRow: View {
 
             Spacer()
 
+            // 排序按钮组：始终可见（便于快速调整工具在浮条中的优先级）
+            // 这里用独立 Button 而非 IconButton 组件，是为了精确控制尺寸和禁用态视觉
+            reorderButtons
+
             // 删除按钮（展开时显示）
             if isExpanded {
                 Button(action: onDelete) {
@@ -299,6 +352,39 @@ private struct ToolRow: View {
         .padding(.vertical, SliceSpacing.base)
         .contentShape(Rectangle())
         .onTapGesture { onToggle() }
+    }
+
+    /// 排序按钮组：↑ 上移 / ↓ 下移
+    ///
+    /// 点击事件用 HighPriorityGesture 阻止冒泡到 HStack 的 onTapGesture（避免误触展开）
+    private var reorderButtons: some View {
+        HStack(spacing: 2) {
+            Button {
+                onMoveUp()
+            } label: {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(canMoveUp ? SliceColor.textSecondary : SliceColor.textDisabled)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canMoveUp)
+            .help("上移")
+
+            Button {
+                onMoveDown()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(canMoveDown ? SliceColor.textSecondary : SliceColor.textDisabled)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canMoveDown)
+            .help("下移")
+        }
     }
 
     /// 工具图标：emoji 字符走 Text；ASCII 字符串按 SF Symbol 解析

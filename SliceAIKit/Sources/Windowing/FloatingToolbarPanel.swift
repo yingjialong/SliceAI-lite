@@ -37,53 +37,22 @@ public final class FloatingToolbarPanel {
     /// 显示浮条
     ///
     /// - Parameters:
-    ///   - tools: 要展示的工具列表（按顺序从左至右）
+    ///   - tools: 要展示的工具列表（按顺序从左至右，超出 `maxTools` 的折叠到"更多"菜单）
     ///   - anchor: 选区中心（屏幕坐标，左下原点）
+    ///   - maxTools: 工具栏最多显示多少个位置（含溢出位的"更多"按钮），下限 2 上限 20
     ///   - onPick: 用户点击某工具时回调
-    public func show(tools: [Tool], anchor: CGPoint, onPick: @escaping (Tool) -> Void) {
-        // 宽度计算：把手(14pt) + 分隔线(1pt + 3pt×2 padding) = 21pt
-        // HStack 子项：DragHandle + N 个按钮 = N+1 项，间距数量 N
-        // 每个按钮 30pt，按钮间距（含 DragHandle↔首按钮）= N * 2pt + 左右 padding 4pt×2
-        let handleWidth: CGFloat = 14 + 7  // 把手 + 分隔线区域宽度
-        let buttonSpacing: CGFloat = 2
-        let buttonsWidth = CGFloat(tools.count) * (30 + buttonSpacing)
-        let padding: CGFloat = 4
-        let width = handleWidth + buttonsWidth + padding * 2
-        let height: CGFloat = 30 + padding * 2  // 按钮高度 + 上下 padding
-        let size = CGSize(width: max(width, 120), height: height)
+    public func show(
+        tools: [Tool],
+        anchor: CGPoint,
+        maxTools: Int = 6,
+        onPick: @escaping (Tool) -> Void
+    ) {
+        let split = splitTools(tools, maxTools: maxTools)
+        let size = computeToolbarSize(itemCount: split.itemCount)
+        let origin = computeOrigin(anchor: anchor, size: size)
 
-        // 选锚点所在屏幕，fallback 到主屏；再 fallback 到零矩形避免 nil
-        let screen = NSScreen.screens.first(where: {
-            $0.visibleFrame.contains(anchor)
-        })?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-
-        // 通过 positioner 计算 origin：默认锚点下方 8px，越界时翻到上方并水平夹紧
-        let origin = positioner.position(anchor: anchor, size: size, screen: screen, offset: 8)
-
-        // 构造 NSPanel
         let panel = makePanel(size: size, origin: origin)
-
-        // 构造 SwiftUI 内容视图，注入拖拽、暂停/恢复计时器的回调
-        let content = ToolbarContent(
-            tools: tools,
-            onPick: { [weak self] tool in
-                // 点击工具后先回调业务方，再关闭浮条，避免回调中再次读取已失效状态
-                onPick(tool)
-                self?.dismiss()
-            },
-            pauseAutoDismiss: { [weak self] in
-                // 拖动开始时暂停自动关闭
-                self?.autoDismissTask?.cancel()
-            },
-            resumeAutoDismiss: { [weak self] in
-                // 拖动结束时重新启动计时
-                self?.scheduleAutoDismiss()
-            },
-            requestDrag: { [weak panel] event in
-                // 将 mouseDown 事件转交 NSWindow 实现整窗拖动
-                panel?.performDrag(with: event)
-            }
-        )
+        let content = makeToolbarContent(split: split, panel: panel, onPick: onPick)
 
         let hosting = NSHostingView(rootView: content)
         hosting.frame = NSRect(origin: .zero, size: size)
@@ -95,6 +64,79 @@ public final class FloatingToolbarPanel {
         scheduleAutoDismiss()
         // 安装外部点击监视器，实现"点 panel 外部即消失"
         installOutsideClickMonitor()
+    }
+
+    // MARK: - 私有辅助
+
+    /// 直接显示的工具 + 溢出的工具 + 渲染位数的组合
+    private struct ToolSplit {
+        let direct: [Tool]
+        let overflow: [Tool]
+        /// 实际渲染的"按钮位"数（含更多按钮位）
+        let itemCount: Int
+    }
+
+    /// 按 maxTools 把工具切分为"直接展示"和"折叠到更多菜单"两部分
+    ///
+    /// maxTools 夹紧到 2...20；tools.count 超过此值时，最后 1 位让给"更多"按钮，
+    /// 因此直接渲染的工具数 = clampedMax - 1，其余进入溢出列表。
+    private func splitTools(_ tools: [Tool], maxTools: Int) -> ToolSplit {
+        let clampedMax = max(2, min(20, maxTools))
+        let hasOverflow = tools.count > clampedMax
+        let direct = hasOverflow ? Array(tools.prefix(clampedMax - 1)) : tools
+        let overflow = hasOverflow ? Array(tools.dropFirst(clampedMax - 1)) : []
+        let itemCount = direct.count + (hasOverflow ? 1 : 0)
+        return ToolSplit(direct: direct, overflow: overflow, itemCount: itemCount)
+    }
+
+    /// 计算工具栏窗口尺寸
+    ///
+    /// 把手(14pt) + 分隔线(1pt + 3pt×2 padding) = 21pt；HStack 共 itemCount+1 项，
+    /// 间距数量 itemCount；每按钮 30pt + 间距 2pt + 左右 padding 4pt×2。
+    private func computeToolbarSize(itemCount: Int) -> CGSize {
+        let handleWidth: CGFloat = 14 + 7
+        let buttonSpacing: CGFloat = 2
+        let buttonsWidth = CGFloat(itemCount) * (30 + buttonSpacing)
+        let padding: CGFloat = 4
+        let width = handleWidth + buttonsWidth + padding * 2
+        let height: CGFloat = 30 + padding * 2
+        return CGSize(width: max(width, 120), height: height)
+    }
+
+    /// 计算工具栏窗口应放置的 origin（屏幕坐标，左下原点）
+    ///
+    /// 14pt 偏移比原 8pt 多一点空隙，避免浮条紧贴光标遮挡视线；越界时 positioner
+    /// 会自动翻到上方并水平夹紧屏幕可见区域。
+    private func computeOrigin(anchor: CGPoint, size: CGSize) -> CGPoint {
+        let screen = NSScreen.screens.first(where: {
+            $0.visibleFrame.contains(anchor)
+        })?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        return positioner.position(anchor: anchor, size: size, screen: screen, offset: 14)
+    }
+
+    /// 构造 ToolbarContent SwiftUI 视图，绑定 onPick / 拖拽 / 暂停自关闭回调
+    private func makeToolbarContent(
+        split: ToolSplit,
+        panel: NSPanel,
+        onPick: @escaping (Tool) -> Void
+    ) -> ToolbarContent {
+        ToolbarContent(
+            directTools: split.direct,
+            overflowTools: split.overflow,
+            onPick: { [weak self] tool in
+                onPick(tool)
+                self?.dismiss()
+            },
+            pauseAutoDismiss: { [weak self] in
+                self?.autoDismissTask?.cancel()
+            },
+            resumeAutoDismiss: { [weak self] in
+                self?.scheduleAutoDismiss()
+            },
+            requestDrag: { [weak panel] event in
+                panel?.performDrag(with: event)
+            }
+        )
     }
 
     /// 立即关闭浮条并清理状态
@@ -168,11 +210,13 @@ public final class FloatingToolbarPanel {
 
 // MARK: - SwiftUI 视图
 
-/// 浮条内部的 SwiftUI 视图：左侧拖拽把手 + 一排可点击的工具图标按钮
+/// 浮条内部的 SwiftUI 视图：左侧拖拽把手 + 一排可点击的工具图标按钮 + 可选"更多"菜单
 private struct ToolbarContent: View {
-    /// 要展示的工具列表
-    let tools: [Tool]
-    /// 工具点击回调
+    /// 直接显示为按钮的工具列表
+    let directTools: [Tool]
+    /// 折叠进"更多"菜单的工具列表；为空时不渲染更多按钮
+    let overflowTools: [Tool]
+    /// 工具点击回调（含从更多菜单触发）
     let onPick: (Tool) -> Void
     /// 拖动开始时暂停自动关闭计时
     let pauseAutoDismiss: () -> Void
@@ -189,8 +233,14 @@ private struct ToolbarContent: View {
             // MARK: 拖拽把手区
             // DragHandle 负责视觉（6点阵 + hover 游标切换），
             // DragGestureHost 负责捕获 mouseDown 并转发给 NSWindow.performDrag
+            //
+            // 关键：这里用 .overlay 而不是 .background。DragHandle 内的 Canvas
+            // 和分隔线是 SwiftUI 前景视图，会优先响应 hit-test，background 的
+            // NSView 永远收不到 mouseDown；overlay 把 NSView 放在最上层，mouseDown
+            // 先到 DragGestureHost，performDrag 才能被调用。onHover 不受影响
+            // （hover 是独立的 tracking area 机制）。
             DragHandle(isDragging: isDragging)
-                .background(
+                .overlay(
                     DragGestureHost { event, phase in
                         switch phase {
                         case .began:
@@ -208,10 +258,16 @@ private struct ToolbarContent: View {
 
             // MARK: 工具按钮列表
             // Tool 已实现 Identifiable（id: String），ForEach 可直接使用
-            ForEach(tools) { tool in
+            ForEach(directTools) { tool in
                 IconButton(text: tool.icon, size: .regular, help: tool.name) {
                     onPick(tool)
                 }
+            }
+
+            // MARK: 溢出"更多"按钮
+            // 仅当 overflowTools 非空时显示；点击弹出 NSMenu（SwiftUI Menu 底层实现）
+            if !overflowTools.isEmpty {
+                overflowMenu
             }
         }
         .padding(4)
@@ -225,6 +281,39 @@ private struct ToolbarContent: View {
         // 两层阴影：主阴影提升层次感，接触阴影模拟贴近感
         .shadow(SliceShadow.hud)
         .shadow(SliceShadow.hudContact)
+    }
+
+    /// "更多"溢出菜单：样式模拟 IconButton，点击弹出系统 NSMenu 列出折叠工具
+    private var overflowMenu: some View {
+        Menu {
+            ForEach(overflowTools) { tool in
+                Button {
+                    onPick(tool)
+                } label: {
+                    // menu item 左侧图标 + 右侧工具名；菜单项会继承系统菜单样式
+                    Label(tool.name, systemImage: isSFSymbol(tool.icon) ? tool.icon : "hammer")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(SliceColor.textSecondary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("更多工具（\(overflowTools.count)）")
+    }
+
+    /// 启发式判定 icon 是否为 SF Symbol 名（首字符为 ASCII 即视为 symbol）
+    ///
+    /// Menu Label 的 systemImage 参数必须是 SF Symbol 名，emoji 会渲染空白；
+    /// 判定不通过时回退到通用 "hammer" 图标，工具真实 emoji 由工具名传达。
+    private func isSFSymbol(_ icon: String) -> Bool {
+        guard let scalar = icon.unicodeScalars.first else { return false }
+        return scalar.isASCII
     }
 }
 

@@ -278,7 +278,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "capture: shown bundle=\(app, privacy: .public) len=\(len, privacy: .public) src=\(src, privacy: .public)"
         )
         // 展示浮条：回调中按选中工具执行
-        container.floatingToolbar.show(tools: cfg.tools, anchor: payload.screenPoint) { [weak self] tool in
+        container.floatingToolbar.show(
+            tools: cfg.tools,
+            anchor: payload.screenPoint,
+            maxTools: cfg.triggers.floatingToolbarMaxTools
+        ) { [weak self] tool in
             self?.execute(tool: tool, payload: payload)
         }
     }

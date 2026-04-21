@@ -61,7 +61,14 @@
         "floatingToolbarEnabled": { "type": "boolean" },
         "commandPaletteEnabled": { "type": "boolean" },
         "minimumSelectionLength": { "type": "integer", "minimum": 1 },
-        "triggerDelayMs": { "type": "integer", "minimum": 0, "maximum": 5000 }
+        "triggerDelayMs": { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "floatingToolbarMaxTools": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20,
+          "default": 6,
+          "description": "悬浮工具栏最多显示多少个位置（含溢出位的\"更多\"按钮）"
+        }
       }
     },
     "telemetry": {

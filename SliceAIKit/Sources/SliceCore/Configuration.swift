@@ -104,6 +104,10 @@ public struct TriggerSettings: Sendable, Codable, Equatable {
     public var minimumSelectionLength: Int
     /// mouseUp 后做 debounce 的毫秒数
     public var triggerDelayMs: Int
+    /// 悬浮工具栏最多显示多少个位置（含溢出位的"更多"按钮）；超出此数会被折叠进"更多"菜单
+    ///
+    /// 取值下限 2 上限 20；旧版 config.json 缺失此字段时默认 6（满足常见工具数且不挤占屏幕）
+    public var floatingToolbarMaxTools: Int
 
     /// 构造触发行为设置
     /// - Parameters:
@@ -111,12 +115,37 @@ public struct TriggerSettings: Sendable, Codable, Equatable {
     ///   - commandPaletteEnabled: 是否启用命令面板
     ///   - minimumSelectionLength: 最小触发选区长度
     ///   - triggerDelayMs: mouseUp 后的 debounce 毫秒
+    ///   - floatingToolbarMaxTools: 悬浮工具栏最多显示多少个工具位（含更多按钮），默认 6
     public init(floatingToolbarEnabled: Bool, commandPaletteEnabled: Bool,
-                minimumSelectionLength: Int, triggerDelayMs: Int) {
+                minimumSelectionLength: Int, triggerDelayMs: Int,
+                floatingToolbarMaxTools: Int = 6) {
         self.floatingToolbarEnabled = floatingToolbarEnabled
         self.commandPaletteEnabled = commandPaletteEnabled
         self.minimumSelectionLength = minimumSelectionLength
         self.triggerDelayMs = triggerDelayMs
+        self.floatingToolbarMaxTools = floatingToolbarMaxTools
+    }
+
+    /// JSON 字段名映射
+    private enum CodingKeys: String, CodingKey {
+        case floatingToolbarEnabled
+        case commandPaletteEnabled
+        case minimumSelectionLength
+        case triggerDelayMs
+        case floatingToolbarMaxTools
+    }
+
+    /// 自定义解码：`floatingToolbarMaxTools` 使用 decodeIfPresent 保证向后兼容
+    ///
+    /// 旧版 config.json 不含此字段，解码时回落到默认值 6，避免因缺字段抛 DecodingError
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        floatingToolbarEnabled = try container.decode(Bool.self, forKey: .floatingToolbarEnabled)
+        commandPaletteEnabled = try container.decode(Bool.self, forKey: .commandPaletteEnabled)
+        minimumSelectionLength = try container.decode(Int.self, forKey: .minimumSelectionLength)
+        triggerDelayMs = try container.decode(Int.self, forKey: .triggerDelayMs)
+        floatingToolbarMaxTools = try container
+            .decodeIfPresent(Int.self, forKey: .floatingToolbarMaxTools) ?? 6
     }
 }
 

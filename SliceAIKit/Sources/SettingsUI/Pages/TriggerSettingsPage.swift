@@ -36,6 +36,9 @@ public struct TriggerSettingsPage: View {
 
             // 灵敏度数值组
             sensitivityCard
+
+            // 浮动工具栏展示组
+            floatingToolbarCard
         }
     }
 
@@ -115,6 +118,44 @@ public struct TriggerSettingsPage: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - 浮动工具栏展示卡片
+
+    /// 控制划词浮条每次最多显示多少个工具位（含"更多"按钮），超出部分折叠到溢出菜单
+    private var floatingToolbarCard: some View {
+        SectionCard("浮动工具栏") {
+            // 最多显示工具数：2–20；超出的工具会折叠到"更多"按钮里
+            SettingsRow("最多显示") {
+                HStack(spacing: SliceSpacing.base) {
+                    // 当前值展示：2 个工具位时会显示"2 个（含更多）"提示
+                    Text("\(viewModel.configuration.triggers.floatingToolbarMaxTools) 个")
+                        .font(SliceFont.subheadline)
+                        .foregroundColor(SliceColor.textSecondary)
+                        .frame(minWidth: 52, alignment: .trailing)
+
+                    Stepper(
+                        "",
+                        value: $viewModel.configuration.triggers.floatingToolbarMaxTools,
+                        in: 2...20
+                    )
+                    .labelsHidden()
+                    .onChange(of: viewModel.configuration.triggers.floatingToolbarMaxTools) { _, _ in
+                        Task { await viewModel.saveTriggers() }
+                    }
+                }
+            }
+
+            // 说明行：解释"更多"按钮行为
+            HStack {
+                Text("工具总数超过此值时，最后一位会变成「⋯ 更多」按钮，点击展开剩余工具。工具在浮条中的顺序与「Tools」页的排序一致，可在那里调整优先级。")
+                    .font(SliceFont.caption)
+                    .foregroundColor(SliceColor.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, SliceSpacing.base)
         }
     }
 }
