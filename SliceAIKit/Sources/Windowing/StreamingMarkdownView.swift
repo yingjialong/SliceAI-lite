@@ -228,6 +228,7 @@ public struct StreamingMarkdownView: View {
                 .font(SliceFont.mono)
                 .lineSpacing(SliceLineSpacing.code)
                 .foregroundColor(SliceColor.textPrimary)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, SliceSpacing.xl)
                 .padding(.vertical, SliceSpacing.lg)
         }
