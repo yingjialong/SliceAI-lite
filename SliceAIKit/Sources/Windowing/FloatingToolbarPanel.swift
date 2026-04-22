@@ -39,9 +39,16 @@ public final class FloatingToolbarPanel {
     /// - Parameters:
     ///   - tools: 要展示的工具列表（按顺序从左至右，超出 `maxTools` 的折叠到"更多"菜单）
     ///   - anchor: 选区中心（屏幕坐标，左下原点）
-    ///   - maxTools: 工具栏最多显示多少个位置（含溢出位的"更多"按钮），下限 2 上限 20
+    ///   - maxTools: 工具栏最多直接展示的工具按钮个数（**不含**溢出时额外追加的「⋯ 更多」按钮），下限 2 上限 20
     ///   - size: 工具栏尺寸档位（.compact 22pt / .regular 30pt），默认 compact
     ///   - onPick: 用户点击某工具时回调
+    ///
+    /// 尺寸计算策略：因为 `labelStyle == .name / .iconAndName` 的按钮宽度取决于
+    /// 具体文字长度，panel 尺寸无法纯靠预计算公式给出。流程改为：
+    ///   1. 先用最小占位尺寸建出 NSPanel（因 content 闭包要引用 panel 做 performDrag）
+    ///   2. 创建 SwiftUI content；用 `NSHostingView.fittingSize` 测量实际需要的像素
+    ///   3. 依据测量尺寸重新算 origin（让 panel 贴近选区又不超屏），再 `setFrame`
+    ///      到正确 size + origin；测量失败（返回 0 或 NaN）时退回老式公式作为兜底
     public func show(
         tools: [Tool],
         anchor: CGPoint,
@@ -52,13 +59,22 @@ public final class FloatingToolbarPanel {
         print("[FloatingToolbarPanel] show tools=\(tools.count) maxTools=\(maxTools) size=\(size.rawValue)")
         let split = splitTools(tools, maxTools: maxTools)
         let metrics = ToolbarMetrics(size: size)
-        let panelSize = computeToolbarSize(itemCount: split.itemCount, metrics: metrics)
-        let origin = computeOrigin(anchor: anchor, size: panelSize)
 
-        let panel = makePanel(size: panelSize, origin: origin)
+        // 1. 用占位尺寸创建 panel——正式尺寸测量后用 setFrame 修正
+        let placeholderSize = computeToolbarSize(itemCount: split.itemCount, metrics: metrics)
+        let panel = makePanel(size: placeholderSize, origin: anchor)
         let content = makeToolbarContent(split: split, metrics: metrics, panel: panel, onPick: onPick)
 
+        // 2. NSHostingView 测量真实尺寸
         let hosting = NSHostingView(rootView: content)
+        hosting.layoutSubtreeIfNeeded()
+        let measured = hosting.fittingSize
+        let panelSize: CGSize = (measured.width > 0 && measured.height > 0)
+            ? measured
+            : placeholderSize
+        // 3. 根据真实 size 重算 origin，setFrame 修正 panel
+        let origin = computeOrigin(anchor: anchor, size: panelSize)
+        panel.setFrame(NSRect(origin: origin, size: panelSize), display: false)
         hosting.frame = NSRect(origin: .zero, size: panelSize)
         panel.contentView = hosting
         panel.orderFrontRegardless()
@@ -85,10 +101,14 @@ public final class FloatingToolbarPanel {
     /// 把配置枚举（ToolbarSize）解耦为布局计算需要的所有像素参数，
     /// 使 show() 逻辑不直接依赖 enum 的 rawValue 做分支
     struct ToolbarMetrics {
-        /// 按钮边长（正方形）
+        /// 按钮边长（正方形；iconOnly 样式下宽 = 高 = buttonSize）
         let buttonSize: CGFloat
-        /// IconButton size 枚举
+        /// IconButton size 枚举（用于 iconOnly 样式）
         let iconButtonSize: IconButton.Size
+        /// 图标字号（emoji Text / SF Symbol 共用）
+        let iconFontSize: CGFloat
+        /// 带文字按钮的 label 字号
+        let labelFontSize: CGFloat
         /// 工具栏外 padding
         let padding: CGFloat
         /// 按钮之间的水平间距
@@ -101,12 +121,16 @@ public final class FloatingToolbarPanel {
             case .compact:
                 self.buttonSize = 22
                 self.iconButtonSize = .small
+                self.iconFontSize = 12
+                self.labelFontSize = 11
                 self.padding = 3
                 self.buttonSpacing = 2
                 self.moreFontSize = 12
             case .regular:
                 self.buttonSize = 30
                 self.iconButtonSize = .regular
+                self.iconFontSize = 15
+                self.labelFontSize = 13
                 self.padding = 4
                 self.buttonSpacing = 2
                 self.moreFontSize = 15
@@ -116,21 +140,23 @@ public final class FloatingToolbarPanel {
 
     /// 按 maxTools 把工具切分为"直接展示"和"折叠到更多菜单"两部分
     ///
-    /// maxTools 夹紧到 2...20；tools.count 超过此值时，最后 1 位让给"更多"按钮，
-    /// 因此直接渲染的工具数 = clampedMax - 1，其余进入溢出列表。
+    /// 语义：`maxTools` 指"最多展示多少个工具按钮"，**不含**溢出状态下额外追加的
+    /// 「⋯ 更多」按钮。因此当 tools.count > maxTools 时，前 maxTools 个工具直接
+    /// 渲染，其余折叠到更多菜单，再在右侧额外放置一个「更多」按钮（itemCount +1）。
     private func splitTools(_ tools: [Tool], maxTools: Int) -> ToolSplit {
         let clampedMax = max(2, min(20, maxTools))
         let hasOverflow = tools.count > clampedMax
-        let direct = hasOverflow ? Array(tools.prefix(clampedMax - 1)) : tools
-        let overflow = hasOverflow ? Array(tools.dropFirst(clampedMax - 1)) : []
+        let direct = hasOverflow ? Array(tools.prefix(clampedMax)) : tools
+        let overflow = hasOverflow ? Array(tools.dropFirst(clampedMax)) : []
         let itemCount = direct.count + (hasOverflow ? 1 : 0)
         return ToolSplit(direct: direct, overflow: overflow, itemCount: itemCount)
     }
 
-    /// 计算工具栏窗口尺寸
+    /// 占位 panel 尺寸（仅用于初始创建；真实 size 由 NSHostingView.fittingSize 测量后 setFrame 覆盖）
     ///
     /// 把手(14pt) + 分隔线(1pt + 3pt×2 padding) = 21pt；HStack 共 itemCount+1 项，
     /// 间距数量 itemCount；每按钮 metrics.buttonSize + metrics.buttonSpacing + 左右 padding×2。
+    /// iconOnly 情况下该公式给出的尺寸即为实际尺寸；包含文字样式时仅作兜底使用。
     private func computeToolbarSize(itemCount: Int, metrics: ToolbarMetrics) -> CGSize {
         let handleWidth: CGFloat = 14 + 7
         let buttonsWidth = CGFloat(itemCount) * (metrics.buttonSize + metrics.buttonSpacing)
@@ -249,8 +275,10 @@ public final class FloatingToolbarPanel {
 }
 
 // MARK: - SwiftUI 视图
+// 文本截断工具（ToolbarLabelFormat）与带文字按钮（ToolbarItemButton）
+// 定义在同目录的 FloatingToolbarPanel+Buttons.swift，仅为控制本文件行数。
 
-/// 浮条内部的 SwiftUI 视图：左侧拖拽把手 + 一排可点击的工具图标按钮 + 可选"更多"菜单
+/// 浮条内部的 SwiftUI 视图：左侧拖拽把手 + 一排可点击的工具按钮 + 可选"更多"菜单
 private struct ToolbarContent: View {
     /// 直接显示为按钮的工具列表
     let directTools: [Tool]
@@ -273,25 +301,15 @@ private struct ToolbarContent: View {
     var body: some View {
         HStack(spacing: metrics.buttonSpacing) {
             // MARK: 拖拽把手区
-            // DragHandle 负责视觉（6点阵 + hover 游标切换），
-            // DragGestureHost 负责捕获 mouseDown 并转发给 NSWindow.performDrag
-            //
-            // 关键：这里用 .overlay 而不是 .background。DragHandle 内的 Canvas
-            // 和分隔线是 SwiftUI 前景视图，会优先响应 hit-test，background 的
-            // NSView 永远收不到 mouseDown；overlay 把 NSView 放在最上层，mouseDown
-            // 先到 DragGestureHost，performDrag 才能被调用。onHover 不受影响
-            // （hover 是独立的 tracking area 机制）。
             DragHandle(isDragging: isDragging)
                 .overlay(
                     DragGestureHost { event, phase in
                         switch phase {
                         case .began:
-                            // 拖动开始：更新状态、暂停自动关闭、转发拖动事件
                             isDragging = true
                             pauseAutoDismiss()
                             requestDrag(event)
                         case .ended:
-                            // 拖动结束：恢复状态和自动关闭计时
                             isDragging = false
                             resumeAutoDismiss()
                         }
@@ -299,16 +317,25 @@ private struct ToolbarContent: View {
                 )
 
             // MARK: 工具按钮列表
-            // Tool 已实现 Identifiable（id: String），ForEach 可直接使用
-            ForEach(directTools) { tool in
-                IconButton(text: tool.icon, size: metrics.iconButtonSize, help: tool.name) {
-                    onPick(tool)
+            // 每两个工具之间插入竖分隔线（与 DragHandle 右侧分隔线同规格：1×16pt divider），
+            // 让多按钮时视觉分隔清晰，尤其在 iconAndName 模式下文字按钮比较密。
+            //
+            // 用 indices 驱动 ForEach 是为了让 `if index > 0` 判断直接内联（对比
+            // enumerated() 在复杂 switch 下更不易触发 Swift type-checker 超时）。
+            ForEach(directTools.indices, id: \.self) { index in
+                if index > 0 {
+                    toolDivider
                 }
+                toolButton(for: directTools[index])
             }
 
             // MARK: 溢出"更多"按钮
-            // 仅当 overflowTools 非空时显示；点击弹出 NSMenu（SwiftUI Menu 底层实现）
+            // 前方同样加一条分隔线（若 directTools 非空）——视觉上把工具栏分成
+            // "工具区" 与 "扩展区"两段。
             if !overflowTools.isEmpty {
+                if !directTools.isEmpty {
+                    toolDivider
+                }
                 overflowMenu
             }
         }
@@ -325,6 +352,42 @@ private struct ToolbarContent: View {
         .shadow(SliceShadow.hudContact)
     }
 
+    /// 工具按钮间的竖向分隔线，规格与左侧 DragHandle 的分隔线一致（1×16pt + divider 色）
+    private var toolDivider: some View {
+        Rectangle()
+            .fill(SliceColor.divider)
+            .frame(width: 1, height: 16)
+    }
+
+    /// 按 tool.labelStyle 分发到三种渲染：
+    ///   - .icon        → 复用 DesignSystem 的 IconButton
+    ///   - .name        → ToolbarItemButton 仅文字
+    ///   - .iconAndName → ToolbarItemButton 图标+文字
+    /// 拆为独立函数避免 ForEach body 内 switch 嵌套太深触发类型推导超时
+    @ViewBuilder
+    private func toolButton(for tool: Tool) -> some View {
+        switch tool.labelStyle {
+        case .icon:
+            IconButton(text: tool.icon, size: metrics.iconButtonSize, help: tool.name) {
+                onPick(tool)
+            }
+        case .name:
+            ToolbarItemButton(
+                icon: nil,
+                label: ToolbarLabelFormat.shorten(tool.name),
+                metrics: metrics,
+                help: tool.name
+            ) { onPick(tool) }
+        case .iconAndName:
+            ToolbarItemButton(
+                icon: tool.icon,
+                label: ToolbarLabelFormat.shorten(tool.name),
+                metrics: metrics,
+                help: tool.name
+            ) { onPick(tool) }
+        }
+    }
+
     /// "更多"溢出菜单：样式模拟 IconButton，点击弹出系统 NSMenu 列出折叠工具
     private var overflowMenu: some View {
         Menu {
@@ -332,7 +395,6 @@ private struct ToolbarContent: View {
                 Button {
                     onPick(tool)
                 } label: {
-                    // menu item 左侧图标 + 右侧工具名；菜单项会继承系统菜单样式
                     Label(tool.name, systemImage: isSFSymbol(tool.icon) ? tool.icon : "hammer")
                 }
             }
@@ -350,9 +412,6 @@ private struct ToolbarContent: View {
     }
 
     /// 启发式判定 icon 是否为 SF Symbol 名（首字符为 ASCII 即视为 symbol）
-    ///
-    /// Menu Label 的 systemImage 参数必须是 SF Symbol 名，emoji 会渲染空白；
-    /// 判定不通过时回退到通用 "hammer" 图标，工具真实 emoji 由工具名传达。
     private func isSFSymbol(_ icon: String) -> Bool {
         guard let scalar = icon.unicodeScalars.first else { return false }
         return scalar.isASCII

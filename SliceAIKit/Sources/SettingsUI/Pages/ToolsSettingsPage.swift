@@ -1,10 +1,24 @@
 // SliceAIKit/Sources/SettingsUI/Pages/ToolsSettingsPage.swift
 //
-// Tools 设置页：列表 + 内联编辑展开区
+// Tools 设置页：列表 + 内联编辑展开区 + Reminders 风格拖拽排序
 // 用户点击列表项即展开编辑 SectionCard（单选展开，再点收起）
+//
+// 拖拽方案（Reminders 风格）：
+//   1. gripHandle 挂 `.onDrag`，把 tool.id 装进 NSItemProvider + 同步写 `draggedId`
+//   2. 每行挂 `.onDrop(delegate: ToolReorderDropDelegate)`，delegate 的
+//      `dropUpdated` 根据光标 y 是否过半判断"插入到本行前还是后"，更新
+//      `dropTargetIndex`；**不做 move，只更新插入指示线位置**
+//   3. 行上/下沿以 overlay 形式画 `InsertionIndicator`（蓝细线+空心圆）
+//   4. `performDrop` 松手时才执行 `tools.move(fromOffsets:toOffset:)`
+//   5. 持久化通过 `.onChange(of: tools)` 做 debounce 保存——这也修复了
+//      "编辑提示词不保存"的 bug，因为任何 tools 变动都会被捕获
+//
+// 这套相较于"实时挤开"方案更贴近 macOS 原生拖拽体感（Finder / Reminders）：
+// 其他行不抖、被拖项由系统预览跟手、指示线清晰表达落位点。
 import DesignSystem
 import SliceCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - ToolsSettingsPage
 
@@ -15,9 +29,19 @@ import SwiftUI
 ///   - 工具列表：每行显示图标 + 工具名 + 描述；点击展开编辑区
 ///   - 编辑区：ToolEditorView 内嵌于内联展开卡片；选另一行或空白处收起
 ///
-/// 持久化策略：ToolEditorView 通过 @Binding 直接修改 configuration，
-/// 编辑收起时调用 viewModel.save() 写回磁盘。
+/// 持久化：通过 `.onChange(of: tools)` 驱动 debounced save——所有 tools
+/// 变动（新增、删除、拖拽排序、ToolEditorView 对 prompt / 名称等的修改）都会
+/// 在用户停手 `saveDebounceInterval` 后自动写盘。
 public struct ToolsSettingsPage: View {
+
+    /// 写盘前的静默等待时长：用户连续编辑时避免频繁写盘
+    private static let saveDebounceInterval: UInt64 = 600_000_000  // 600 ms
+
+    /// 拖拽上/下半判定用的行高估算值（硬编码）
+    ///
+    /// ToolRow 内容：icon 32pt + 上下 padding 8pt×2 = 48pt，加上文字换行约 50pt。
+    /// 2~3pt 误差对"过半 / 未过半"判定不敏感；真实需要时再改为 PreferenceKey 测量。
+    private static let estimatedRowHeight: CGFloat = 50
 
     /// 设置视图模型，用于读写 configuration.tools
     @ObservedObject private var viewModel: SettingsViewModel
@@ -28,6 +52,19 @@ public struct ToolsSettingsPage: View {
     /// 待确认删除的 Tool id；非 nil 时弹出删除确认 alert
     @State private var pendingDeleteId: String?
 
+    /// 当前被拖动的 Tool.id；非 nil 表示正有一次拖拽进行中
+    @State private var draggedId: String?
+
+    /// 如果此刻松手，插入点（Array.move 的 toOffset 语义，0…count）
+    ///
+    /// - nil：不显示任何指示线
+    /// - 0：插入到第一个工具之前
+    /// - N：插入到 tools[N] 之前（等于最后位置时在列表尾部）
+    @State private var dropTargetIndex: Int?
+
+    /// debounced save 的当前 Task；新变动进来就 cancel 重排
+    @State private var saveDebounceTask: Task<Void, Never>?
+
     /// 构造 Tools 设置页
     /// - Parameter viewModel: 宿主注入的设置视图模型
     public init(viewModel: SettingsViewModel) {
@@ -36,10 +73,7 @@ public struct ToolsSettingsPage: View {
 
     public var body: some View {
         SettingsPageShell(title: "Tools", subtitle: "管理工具列表与提示词。") {
-            // 顶部操作按钮行
             actionRow
-
-            // 工具列表
             if viewModel.configuration.tools.isEmpty {
                 emptyState
             } else {
@@ -52,11 +86,15 @@ public struct ToolsSettingsPage: View {
                 performDelete(id: tool.id)
                 pendingDeleteId = nil
             }
-            Button("取消", role: .cancel) {
-                pendingDeleteId = nil
-            }
+            Button("取消", role: .cancel) { pendingDeleteId = nil }
         } message: { tool in
             Text("确定要删除「\(tool.name)」吗？此操作不可撤销。")
+        }
+        // 核心持久化钩子：任何对 tools 的改动（编辑 / 排序 / 新增 / 删除）
+        // 停手 saveDebounceInterval 后自动落盘；老代码里分散在 addTool / performDelete
+        // / 拖拽里的 save 全部撤销，改由这里统一处理。
+        .onChange(of: viewModel.configuration.tools) { _, _ in
+            scheduleDebouncedSave()
         }
     }
 
@@ -107,69 +145,109 @@ public struct ToolsSettingsPage: View {
 
     // MARK: - 工具列表
 
-    /// 完整工具列表（含内联编辑展开区）
+    /// 完整工具列表（每行是 drop 目标 + 可能叠加插入指示线）
+    ///
+    /// 外层 VStack 上挂一个兜底 `.onDrop(delegate:)`——用户把拖拽松手在行
+    /// 之间的空隙或者列表底部 padding 区时，行内 delegate 不会触发，这里兜底
+    /// commit 一次 reorder；同时也作为 dropUpdated 的默认容器处理最顶/最底的
+    /// 特殊插入位置。
     private var toolList: some View {
         VStack(spacing: SliceSpacing.sm) {
-            // 用 indices 驱动 ForEach 是为了拿到 index 做排序按钮的 disable 判定；
-            // 同时通过 $viewModel.configuration.tools[index] 构造 binding 给 editor
             ForEach(viewModel.configuration.tools.indices, id: \.self) { index in
                 toolListItem(for: $viewModel.configuration.tools[index], index: index)
             }
         }
+        // 插入指示线切换时淡入淡出，避免线在不同 slot 之间"闪"
+        .animation(.easeOut(duration: 0.12), value: dropTargetIndex)
+        // 兜底 drop：行外空白区松手也能完成 reorder；detecting only）
+        .onDrop(of: [UTType.plainText], isTargeted: nil) { _ in
+            commitReorder()
+            return true
+        }
     }
 
-    /// 单个工具列表项（行 + 展开编辑区 + 背景描边 + 拖拽排序）
+    /// 单个工具列表项（行 + 展开编辑区 + drop 接收 + 插入指示线 overlay）
     ///
-    /// 独立为方法以避免 Swift 类型推导超时（toolList ForEach body 过深）。
     /// - Parameters:
     ///   - binding: Tool 的双向绑定，editor 通过此 binding 修改 configuration
-    ///   - index: 当前工具在 tools 数组里的位置，用于拖放时计算目标位置
+    ///   - index: 当前行在 tools 数组中的索引
     @ViewBuilder
     private func toolListItem(for binding: Binding<Tool>, index: Int) -> some View {
         let tool = binding.wrappedValue
         let isExpanded = expandedId == tool.id
-        // 计算描边颜色，避免在 overlay 闭包里做三目表达式
-        let strokeColor = isExpanded ? SliceColor.accent.opacity(0.4) : SliceColor.border
+        let isLast = index == viewModel.configuration.tools.count - 1
 
         VStack(spacing: 0) {
-            // 列表行
-            ToolRow(tool: tool, isExpanded: isExpanded) {
-                // 点击同行收起，点击另一行切换
-                withAnimation(SliceAnimation.standard) {
-                    expandedId = isExpanded ? nil : tool.id
-                }
-            } onDelete: {
-                // 不直接删，先设置 pendingDeleteId 弹出 alert 二次确认
-                pendingDeleteId = tool.id
-            }
-
-            // 内联编辑区（展开时显示）
-            // 用 .opacity 淡入淡出 + VStack 高度随 withAnimation 自然扩张，
-            // 视觉上呈现从 row 底部"推开"的展开动画；避免 .move(edge:.top)
-            // 带来的从外部飞入感。
+            makeToolRow(tool: tool, isExpanded: isExpanded)
             if isExpanded {
-                toolEditor(for: binding)
-                    .transition(.opacity)
+                toolEditor(for: binding).transition(.opacity)
             }
         }
         .clipped()
-        .background(
-            RoundedRectangle(cornerRadius: SliceRadius.card)
-                .fill(SliceColor.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: SliceRadius.card)
-                        .stroke(strokeColor, lineWidth: 0.5)
-                )
-        )
-        // 拖放目标：接收来自其他行的 Tool.id 字符串，放到当前 index 位置
-        // `.draggable` 设在行内 handle 图标上（见 ToolRow.gripHandle），单击/点击展开不受影响；
-        // `.dropDestination` 在整行上，拖动越过任意位置都能接收
-        .dropDestination(for: String.self) { droppedIds, _ in
-            guard let sourceId = droppedIds.first else { return false }
-            return moveTool(sourceId: sourceId, toIndex: index)
-        } isTargeted: { _ in
-            // 需要高亮 drop 目标可在这里给 @State 赋值；MVP 先不做视觉区分
+        .background(rowBackground(isExpanded: isExpanded))
+        // 顶部指示线（插入到 index 之前）
+        .overlay(alignment: .top) {
+            if dropTargetIndex == index {
+                InsertionIndicator()
+                    .padding(.horizontal, SliceSpacing.xs)
+                    .offset(y: -(SliceSpacing.sm / 2 + InsertionIndicator.height / 2))
+            }
         }
+        // 底部指示线（仅最后一行显示——插入到末尾，dropTargetIndex == count）
+        .overlay(alignment: .bottom) {
+            if isLast && dropTargetIndex == viewModel.configuration.tools.count {
+                InsertionIndicator()
+                    .padding(.horizontal, SliceSpacing.xs)
+                    .offset(y: SliceSpacing.sm / 2 + InsertionIndicator.height / 2)
+            }
+        }
+        // 本行的 drop 委派：更新 dropTargetIndex / commit reorder
+        .onDrop(
+            of: [UTType.plainText],
+            delegate: ToolReorderDropDelegate(
+                targetIndex: index,
+                rowHeight: Self.estimatedRowHeight,
+                tools: $viewModel.configuration.tools,
+                draggedId: $draggedId,
+                dropTargetIndex: $dropTargetIndex
+            )
+        )
+    }
+
+    /// 构造列表行视图
+    /// - Parameters:
+    ///   - tool: 当前行对应的工具（只读快照）
+    ///   - isExpanded: 是否当前展开编辑区
+    private func makeToolRow(tool: Tool, isExpanded: Bool) -> ToolRow {
+        ToolRow(
+            tool: tool,
+            isExpanded: isExpanded,
+            onToggle: {
+                // 拖动中忽略 tap，避免松手瞬间误触切换
+                guard draggedId == nil else { return }
+                withAnimation(SliceAnimation.standard) {
+                    expandedId = isExpanded ? nil : tool.id
+                }
+            },
+            onDelete: { pendingDeleteId = tool.id },
+            onDragStart: {
+                if expandedId != nil { expandedId = nil }
+                draggedId = tool.id
+                dropTargetIndex = nil
+                print("[ToolsSettingsPage] drag: start id=\(tool.id)")
+            }
+        )
+    }
+
+    /// 行背景：圆角表面 + 边框描边（展开时描边变 accent 色）
+    private func rowBackground(isExpanded: Bool) -> some View {
+        let strokeColor = isExpanded ? SliceColor.accent.opacity(0.4) : SliceColor.border
+        return RoundedRectangle(cornerRadius: SliceRadius.card)
+            .fill(SliceColor.surface)
+            .overlay(
+                RoundedRectangle(cornerRadius: SliceRadius.card)
+                    .stroke(strokeColor, lineWidth: 0.5)
+            )
     }
 
     // MARK: - 内联编辑区
@@ -177,12 +255,7 @@ public struct ToolsSettingsPage: View {
     /// 展开的 Tool 编辑区（嵌入 ToolEditorView）
     private func toolEditor(for binding: Binding<Tool>) -> some View {
         VStack(spacing: 0) {
-            // 分隔线
-            Rectangle()
-                .fill(SliceColor.divider)
-                .frame(height: 0.5)
-
-            // 编辑表单
+            Rectangle().fill(SliceColor.divider).frame(height: 0.5)
             ToolEditorView(
                 tool: binding,
                 providers: viewModel.configuration.providers
@@ -193,11 +266,9 @@ public struct ToolsSettingsPage: View {
 
     // MARK: - 数据操作
 
-    /// 添加新工具并自动展开编辑区
+    /// 添加新工具并自动展开编辑区（save 由 onChange(tools) 兜底）
     private func addTool() {
-        // 生成唯一 id，使用时间戳后缀避免重复
         let newId = "tool-\(Int(Date().timeIntervalSince1970))"
-        // 关联第一个可用 Provider（若有）
         let providerId = viewModel.configuration.providers.first?.id ?? ""
         let newTool = Tool(
             id: newId,
@@ -214,196 +285,142 @@ public struct ToolsSettingsPage: View {
         )
         print("[ToolsSettingsPage] addTool: id=\(newId)")
         viewModel.configuration.tools.append(newTool)
-        // 立即展开新工具的编辑区
         withAnimation(SliceAnimation.standard) {
             expandedId = newId
         }
-        // 异步持久化
-        Task {
-            do {
-                try await viewModel.save()
-                print("[ToolsSettingsPage] addTool: saved OK")
-            } catch {
-                print("[ToolsSettingsPage] addTool: save failed – \(error.localizedDescription)")
-            }
-        }
     }
 
-    /// 拖放排序：把 sourceId 对应的工具移到 toIndex 位置
-    ///
-    /// 工具的数组顺序即浮条显示优先级（前面的优先展示），此方法是"Tools 页拖拽排序"的核心。
-    /// 使用 `Array.move(fromOffsets:toOffset:)` 标准位移算法，源 → 目标的 offset 需
-    /// 补偿 SwiftUI move 的语义差异（当 source < target 时 toOffset 要 +1）。
-    /// - Parameters:
-    ///   - sourceId: 被拖拽的 Tool.id（来自 .draggable 的 payload）
-    ///   - toIndex: 目标行在当前 tools 数组中的索引
-    /// - Returns: 是否成功移动（源 id 不存在或源等于目标时返回 false）
-    @discardableResult
-    private func moveTool(sourceId: String, toIndex: Int) -> Bool {
-        var tools = viewModel.configuration.tools
-        guard let sourceIndex = tools.firstIndex(where: { $0.id == sourceId }),
-              tools.indices.contains(toIndex),
-              sourceIndex != toIndex else {
-            return false
-        }
-        print("[ToolsSettingsPage] moveTool: \(sourceIndex) → \(toIndex)")
-        // Array.move 的 toOffset 是"插入位置"，当从前向后移时目标需要 +1 才能落在目标行后
-        let destination = sourceIndex < toIndex ? toIndex + 1 : toIndex
-        withAnimation(SliceAnimation.standard) {
-            tools.move(fromOffsets: IndexSet(integer: sourceIndex), toOffset: destination)
-            viewModel.configuration.tools = tools
-        }
-        Task {
-            do {
-                try await viewModel.save()
-                print("[ToolsSettingsPage] moveTool: saved OK")
-            } catch {
-                print("[ToolsSettingsPage] moveTool: save failed – \(error.localizedDescription)")
-            }
-        }
-        return true
-    }
-
-    /// 实际执行删除（alert 确认后才调用）
+    /// 实际执行删除（alert 确认后才调用；save 由 onChange(tools) 兜底）
     private func performDelete(id: String) {
         print("[ToolsSettingsPage] performDelete: id=\(id)")
         withAnimation(SliceAnimation.standard) {
             viewModel.configuration.tools.removeAll { $0.id == id }
-            // 若删的是当前展开项，收起
-            if expandedId == id {
-                expandedId = nil
-            }
+            if expandedId == id { expandedId = nil }
         }
-        Task {
+    }
+
+    /// 拖拽结束（行 / 外层兜底）时统一调用：执行 Array.move 并清理状态
+    ///
+    /// `dropTargetIndex` 在 `dropUpdated` 里实时更新；松手后落盘由
+    /// `.onChange(of: tools)` 的 debounced save 自动兜底。
+    /// 不清 draggedId / dropTargetIndex 就会污染下一次拖拽，必须 defer 清掉。
+    private func commitReorder() {
+        defer {
+            draggedId = nil
+            dropTargetIndex = nil
+        }
+        guard let sourceId = draggedId,
+              let from = viewModel.configuration.tools.firstIndex(where: { $0.id == sourceId }),
+              let target = dropTargetIndex else {
+            return
+        }
+        // target == from / target == from + 1 都等价于"不移动"，跳过避免无意义动画
+        guard target != from, target != from + 1 else { return }
+        print("[ToolsSettingsPage] commitReorder: \(from) → \(target)")
+        withAnimation(.easeInOut(duration: 0.25)) {
+            viewModel.configuration.tools.move(
+                fromOffsets: IndexSet(integer: from),
+                toOffset: target
+            )
+        }
+    }
+
+    /// 安排一次 debounced save（取消上一个挂起 Task 再启新）
+    ///
+    /// 这是**唯一的 save 入口**：addTool / performDelete / commitReorder /
+    /// ToolEditorView 的 @Binding 写入全都通过 `.onChange(of: tools)` 流到这里。
+    /// 好处：不用在各处显式 save、用户停手才写盘、ToolEditorView 的文字输入也会保存。
+    private func scheduleDebouncedSave() {
+        saveDebounceTask?.cancel()
+        saveDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.saveDebounceInterval)
+            guard !Task.isCancelled else { return }
             do {
                 try await viewModel.save()
-                print("[ToolsSettingsPage] performDelete: saved OK")
+                print("[ToolsSettingsPage] debounced save OK")
             } catch {
-                print("[ToolsSettingsPage] performDelete: save failed – \(error.localizedDescription)")
+                print("[ToolsSettingsPage] debounced save failed – \(error.localizedDescription)")
             }
         }
     }
 }
 
-// MARK: - ToolRow
+// MARK: - ToolReorderDropDelegate
 
-/// 工具列表行：拖拽把手 + 工具图标 + 名称 + 描述 + 删除 + 展开 chevron
+/// 工具行的 drop 接收代理——只负责更新插入指示线位置，不做实时 reorder
 ///
-/// 作为纯展示组件，点击事件通过 onToggle / onDelete 回调向上传递。
-/// 拖拽排序：行最左侧的 `line.3.horizontal` 把手图标是 `.draggable` 的触发点，
-/// payload 是 tool.id；drop 目标由外层 toolListItem 的 `.dropDestination` 接收。
-/// 工具的数组顺序即浮条显示优先级——越靠前在浮条里出现越早。
-private struct ToolRow: View {
+/// 与旧版"dropEntered 立即 move"的实现相反：本实现在 `dropUpdated` 里根据
+/// 光标在本行的上/下半，更新 `dropTargetIndex`，**不触碰 tools 数组**。
+/// 真正的 `tools.move` 发生在 `performDrop`——这让其他行始终不动，被拖项
+/// 由系统拖拽预览跟随光标，UI 视觉完全稳定、没有"乱挤开"的抖动。
+///
+/// 设计取舍：不从 NSItemProvider 解析 draggedId（避免异步 loadObject 的 latency），
+/// 而是直接读 @Binding；payload 仅作为 SwiftUI drag 管道的契约占位。
+private struct ToolReorderDropDelegate: DropDelegate {
 
-    /// 当前行对应的 Tool（只读展示）
-    let tool: Tool
+    /// 本行在 tools 数组中的索引
+    let targetIndex: Int
 
-    /// 当前行是否展开
-    let isExpanded: Bool
+    /// 用于判断光标落在本行上半 / 下半的行高估算值
+    let rowHeight: CGFloat
 
-    /// 点击行时的切换回调
-    let onToggle: () -> Void
+    /// 全局工具数组的 @Binding；delegate 在 performDrop 里 mutate
+    @Binding var tools: [Tool]
 
-    /// 点击删除按钮的回调
-    let onDelete: () -> Void
+    /// 当前被拖的 Tool.id；由外层 `.onDrag` 写入，commit 后置 nil
+    @Binding var draggedId: String?
 
-    var body: some View {
-        HStack(spacing: SliceSpacing.base) {
-            // 最左侧拖拽把手：只有这里是 .draggable 触发点，tap 在其他区域仍能切换展开
-            gripHandle
+    /// 若此刻松手，插入位置（Array.move 的 toOffset 语义）；nil 不显示指示线
+    @Binding var dropTargetIndex: Int?
 
-            // 工具图标区域
-            iconView
-
-            // 名称 + 描述副标题
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tool.name)
-                    .font(SliceFont.subheadline)
-                    .foregroundColor(SliceColor.textPrimary)
-
-                // 描述优先，无描述时展示 userPrompt 截断预览
-                let subtitle = tool.description ?? String(tool.userPrompt.prefix(40))
-                Text(subtitle)
-                    .font(SliceFont.caption)
-                    .foregroundColor(SliceColor.textSecondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            // 删除按钮（展开时显示）
-            if isExpanded {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12))
-                        .foregroundColor(SliceColor.error)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, SliceSpacing.xs)
-            }
-
-            // 展开 chevron（只有这个是上下箭头，用 chevron 不会和排序图标冲突）
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(SliceColor.textSecondary)
+    /// 保证系统光标显示"移动"而非"复制"箭头
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard draggedId != nil else { return nil }
+        // info.location.y 相对本行坐标系，0 在行顶部、rowHeight 在行底部
+        let isUpperHalf = info.location.y < rowHeight / 2
+        // 上半 → 插到本行前（index）；下半 → 插到本行后（index+1）
+        let newIndex = isUpperHalf ? targetIndex : targetIndex + 1
+        // 只在值真正变化时写回，避免 dropUpdated 高频触发导致无效重绘
+        if dropTargetIndex != newIndex {
+            dropTargetIndex = newIndex
         }
-        .padding(.horizontal, SliceSpacing.xl)
-        .padding(.vertical, SliceSpacing.base)
-        .contentShape(Rectangle())
-        .onTapGesture { onToggle() }
+        return DropProposal(operation: .move)
     }
 
-    /// 拖拽把手：`line.3.horizontal` 图标 + `.draggable(tool.id)` 触发系统拖拽
-    ///
-    /// `.draggable` 放在这里而不是整行上，是为了避免整行在 click 时被误判为准备拖拽
-    /// （SwiftUI 会有微小延迟等待鼠标移动），让单击展开保持零延迟响应。hover 时
-    /// 游标切到 openHand 提示用户"这里可拖"。
-    private var gripHandle: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(SliceColor.textTertiary)
-            .frame(width: 20, height: 24)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering { NSCursor.openHand.push() } else { NSCursor.pop() }
-            }
-            .draggable(tool.id) {
-                // 拖拽预览：在鼠标指针旁显示的半透明迷你卡片
-                HStack(spacing: SliceSpacing.sm) {
-                    Text(tool.icon).font(.system(size: 14))
-                    Text(tool.name)
-                        .font(SliceFont.caption)
-                        .foregroundColor(SliceColor.textPrimary)
-                }
-                .padding(.horizontal, SliceSpacing.base)
-                .padding(.vertical, SliceSpacing.xs)
-                .background(
-                    RoundedRectangle(cornerRadius: SliceRadius.control)
-                        .fill(SliceColor.surface)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: SliceRadius.control)
-                                .stroke(SliceColor.accent.opacity(0.4), lineWidth: 1)
-                        )
-                )
-            }
+    /// 只有已经发起本页面内部拖拽才接受 drop——防御外部 drag 源误触
+    func validateDrop(info: DropInfo) -> Bool {
+        draggedId != nil
     }
 
-    /// 工具图标：emoji 字符走 Text；ASCII 字符串按 SF Symbol 解析
-    private var iconView: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: SliceRadius.control)
-                .fill(SliceColor.hoverFill)
-                .frame(width: 32, height: 32)
-
-            // 启发式：首字符非 ASCII 视为 emoji（默认工具 🌐📝✨💡 走此分支），
-            // 否则当成 SF Symbol 名（如 "hammer" / "doc.on.doc"）
-            if let scalar = tool.icon.unicodeScalars.first, !scalar.isASCII {
-                Text(tool.icon).font(.system(size: 18))
-            } else {
-                Image(systemName: tool.icon)
-                    .font(.system(size: 14))
-                    .foregroundColor(SliceColor.accent)
-            }
+    /// 拖入本行时：顺便把插入指示设一次，避免 dropUpdated 首帧延迟导致线不显示
+    func dropEntered(info: DropInfo) {
+        guard draggedId != nil else { return }
+        let isUpperHalf = info.location.y < rowHeight / 2
+        let newIndex = isUpperHalf ? targetIndex : targetIndex + 1
+        if dropTargetIndex != newIndex {
+            dropTargetIndex = newIndex
         }
+    }
+
+    /// 松手：执行最终的 reorder + 清状态；save 由外层 onChange(tools) 兜底
+    func performDrop(info: DropInfo) -> Bool {
+        defer {
+            draggedId = nil
+            dropTargetIndex = nil
+        }
+        guard let sourceId = draggedId,
+              let from = tools.firstIndex(where: { $0.id == sourceId }),
+              let target = dropTargetIndex else {
+            return false
+        }
+        // target == from / target == from + 1 都等价于"不移动"，跳过无意义动画
+        guard target != from, target != from + 1 else { return true }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            tools.move(
+                fromOffsets: IndexSet(integer: from),
+                toOffset: target
+            )
+        }
+        return true
     }
 }

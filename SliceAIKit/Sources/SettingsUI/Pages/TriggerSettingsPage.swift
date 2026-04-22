@@ -140,7 +140,7 @@ public struct TriggerSettingsPage: View {
                 }
             }
 
-            // 最多显示工具数：2–20；超出的工具会折叠到"更多"按钮里
+            // 最多显示工具按钮数：2–20；超出的工具会折叠到额外追加的"更多"按钮里
             SettingsRow("最多显示") {
                 HStack(spacing: SliceSpacing.base) {
                     // 当前值展示
@@ -163,7 +163,7 @@ public struct TriggerSettingsPage: View {
 
             // 说明行：解释"更多"按钮行为
             HStack {
-                Text("工具总数超过此值时，最后一位会变成「⋯ 更多」按钮，点击展开剩余工具。工具在浮条中的顺序与「Tools」页的排序一致，可在那里拖拽调整。")
+                Text("工具总数超过此值时，会在右侧额外追加「⋯ 更多」按钮，点击展开剩余工具（不会占用此处设定的显示名额）。工具在浮条中的顺序与「Tools」页的排序一致，可在那里拖拽调整。")
                     .font(SliceFont.caption)
                     .foregroundColor(SliceColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

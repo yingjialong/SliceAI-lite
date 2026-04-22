@@ -18,6 +18,12 @@ public struct ToolEditorView: View {
     /// 可选的 Provider 列表，作为 Picker 数据源
     public let providers: [Provider]
 
+    /// "添加变量"对话框是否展示
+    @State private var showAddVariableAlert = false
+
+    /// 对话框里待输入的变量名
+    @State private var newVariableKey = ""
+
     /// 构造 Tool 编辑视图
     /// - Parameters:
     ///   - tool: 指向 Configuration 中某个 Tool 的绑定
@@ -38,10 +44,16 @@ public struct ToolEditorView: View {
             // Provider 分组：关联 Provider / 模型覆写 / 采样温度
             providerCard
 
-            // 自定义变量分组（有变量时才显示）
-            if !tool.variables.isEmpty {
-                variablesCard
-            }
+            // 自定义变量分组（始终显示——空态也要提供"添加变量"入口）
+            variablesCard
+        }
+        // 添加变量对话框
+        .alert("添加变量", isPresented: $showAddVariableAlert) {
+            TextField("变量名（如 language）", text: $newVariableKey)
+            Button("添加") { addVariable() }
+            Button("取消", role: .cancel) { newVariableKey = "" }
+        } message: {
+            Text("变量名将作为提示词模板占位符，例如填写 language 后可在 prompt 里用 {{language}} 引用。")
         }
     }
 
@@ -79,42 +91,42 @@ public struct ToolEditorView: View {
                 .foregroundColor(SliceColor.textPrimary)
                 .font(SliceFont.body)
             }
+
+            // 浮条显示样式：三选一 segmented
+            // 名称模式下会按"≤4 个中文字或 1 个英文单词"自动截断，
+            // 避免长名称把浮条撑得过宽；详细截断规则见 FloatingToolbarPanel.shortenLabel
+            SettingsRow("浮条显示") {
+                Picker("", selection: $tool.labelStyle) {
+                    ForEach(ToolLabelStyle.allCases, id: \.self) { style in
+                        Text(style.displayLabel).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 240)
+            }
         }
     }
 
     // MARK: - 提示词卡片
 
     /// 提示词分组：System / User Prompt
+    ///
+    /// 这里用 `TextEditor` 代替 `TextField(axis: .vertical)`——后者虽然支持多行显示，
+    /// 但 macOS 下按 Return 会触发提交（commit）而非换行，无法输入多段 prompt。
+    /// TextEditor 底层是 NSTextView，Return 原生换行，符合写 prompt 的预期。
     private var promptCard: some View {
         SectionCard("提示词") {
-            // System Prompt：多行输入
-            VStack(alignment: .leading, spacing: SliceSpacing.xs) {
-                Text("System Prompt")
-                    .font(SliceFont.subheadline)
-                    .foregroundColor(SliceColor.textPrimary)
-
-                TextField(
-                    "可选 System Prompt…",
-                    text: Binding(
-                        get: { tool.systemPrompt ?? "" },
-                        set: { tool.systemPrompt = $0.isEmpty ? nil : $0 }
-                    ),
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .lineLimit(2...5)
-                .foregroundColor(SliceColor.textPrimary)
-                .font(SliceFont.body)
-                .padding(SliceSpacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: SliceRadius.control)
-                        .fill(SliceColor.background)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: SliceRadius.control)
-                                .stroke(SliceColor.border, lineWidth: 0.5)
-                        )
-                )
-            }
+            PromptTextEditor(
+                label: "System Prompt",
+                placeholder: "可选 System Prompt…",
+                required: false,
+                text: Binding(
+                    get: { tool.systemPrompt ?? "" },
+                    set: { tool.systemPrompt = $0.isEmpty ? nil : $0 }
+                ),
+                minHeight: 72
+            )
             .padding(.vertical, SliceSpacing.base)
             .overlay(alignment: .bottom) {
                 Rectangle()
@@ -123,41 +135,21 @@ public struct ToolEditorView: View {
                     .padding(.horizontal, -SliceSpacing.xl)
             }
 
-            // User Prompt：多行输入，必填
-            VStack(alignment: .leading, spacing: SliceSpacing.xs) {
-                HStack {
-                    Text("User Prompt")
-                        .font(SliceFont.subheadline)
-                        .foregroundColor(SliceColor.textPrimary)
-                    Spacer()
-                    // 必填标记
-                    Text("必填")
-                        .font(SliceFont.caption)
-                        .foregroundColor(SliceColor.error)
-                }
-
-                TextField("输入 User Prompt，可用 {{selection}} 等变量…",
-                          text: $tool.userPrompt, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(3...8)
-                    .foregroundColor(SliceColor.textPrimary)
-                    .font(SliceFont.body)
-                    .padding(SliceSpacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: SliceRadius.control)
-                            .fill(SliceColor.background)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: SliceRadius.control)
-                                    .stroke(SliceColor.border, lineWidth: 0.5)
-                            )
-                    )
-
-                // 变量提示
-                Text("可用变量：{{selection}}  {{app}}  {{url}}  {{language}}")
-                    .font(SliceFont.caption)
-                    .foregroundColor(SliceColor.textTertiary)
-            }
+            PromptTextEditor(
+                label: "User Prompt",
+                placeholder: "输入 User Prompt，可用 {{selection}} 等变量…",
+                required: true,
+                text: $tool.userPrompt,
+                minHeight: 120
+            )
             .padding(.vertical, SliceSpacing.base)
+
+            // 变量提示
+            Text("可用变量：{{selection}}  {{app}}  {{url}}  {{language}}")
+                .font(SliceFont.caption)
+                .foregroundColor(SliceColor.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, SliceSpacing.xs)
         }
     }
 
@@ -232,24 +224,168 @@ public struct ToolEditorView: View {
 
     // MARK: - 自定义变量卡片
 
-    /// 自定义变量键值对（有值时才渲染，避免空 Section）
+    /// 自定义变量分组：始终显示；提供 key-value 列表 + 添加/删除入口
+    ///
+    /// 空态下显示"暂无变量"提示 + 底部"添加变量"按钮；非空时每行 key + value
+    /// TextField + 右侧删除按钮。添加新变量通过 alert 询问 key 名，value 初始为空、
+    /// 用户后续在列表里填。
     private var variablesCard: some View {
         SectionCard("自定义变量") {
-            ForEach(Array(tool.variables.keys.sorted()), id: \.self) { key in
-                SettingsRow(key) {
-                    TextField(
-                        key,
-                        text: Binding(
-                            get: { tool.variables[key] ?? "" },
-                            set: { tool.variables[key] = $0 }
-                        )
-                    )
-                    .textFieldStyle(.plain)
-                    .multilineTextAlignment(.trailing)
-                    .foregroundColor(SliceColor.textPrimary)
-                    .font(SliceFont.body)
+            // 说明文字
+            HStack {
+                Text("变量会注入到提示词里的 {{变量名}} 占位符。")
+                    .font(SliceFont.caption)
+                    .foregroundColor(SliceColor.textTertiary)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, SliceSpacing.xs)
+
+            if tool.variables.isEmpty {
+                // 空态
+                HStack {
+                    Text("暂无自定义变量")
+                        .font(SliceFont.caption)
+                        .foregroundColor(SliceColor.textTertiary)
+                    Spacer()
+                }
+                .padding(.vertical, SliceSpacing.sm)
+            } else {
+                // 变量行列表：key 标签 + value TextField + 删除按钮
+                ForEach(Array(tool.variables.keys.sorted()), id: \.self) { key in
+                    variableRow(key: key)
                 }
             }
+
+            // 底部"添加变量"按钮
+            HStack {
+                Spacer()
+                PillButton("添加变量", icon: "plus", style: .secondary) {
+                    newVariableKey = ""
+                    showAddVariableAlert = true
+                }
+            }
+            .padding(.top, SliceSpacing.xs)
+        }
+    }
+
+    /// 单行自定义变量编辑：key 标签 + value TextField + 删除按钮
+    /// - Parameter key: 变量名
+    private func variableRow(key: String) -> some View {
+        HStack(spacing: SliceSpacing.sm) {
+            // key 标签占固定宽度，便于多行对齐
+            Text(key)
+                .font(SliceFont.subheadline)
+                .foregroundColor(SliceColor.textPrimary)
+                .frame(minWidth: 90, alignment: .leading)
+                .lineLimit(1)
+
+            // value 输入框
+            TextField(
+                "变量值",
+                text: Binding(
+                    get: { tool.variables[key] ?? "" },
+                    set: { tool.variables[key] = $0 }
+                )
+            )
+            .textFieldStyle(.plain)
+            .foregroundColor(SliceColor.textPrimary)
+            .font(SliceFont.body)
+
+            // 删除按钮
+            Button {
+                tool.variables.removeValue(forKey: key)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(SliceColor.error)
+            }
+            .buttonStyle(.plain)
+            .help("删除此变量")
+        }
+        .padding(.vertical, SliceSpacing.xs)
+    }
+
+    // MARK: - 辅助
+
+    /// alert 里"添加"按钮的回调：校验 key 并写入 variables
+    ///
+    /// 约束：
+    ///   - 去首尾空白后非空
+    ///   - 不与已有 key 重复（重复时直接忽略这次添加，保留已有值）
+    /// 若校验未通过也重置 newVariableKey，避免下次弹框残留脏值。
+    private func addVariable() {
+        defer { newVariableKey = "" }
+        let trimmed = newVariableKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, tool.variables[trimmed] == nil else { return }
+        tool.variables[trimmed] = ""
+    }
+}
+
+// MARK: - PromptTextEditor
+
+/// 带 placeholder 和圆角边框的多行 prompt 编辑器
+///
+/// macOS 下原生 `TextField(axis: .vertical)` 按 Return 会提交而非换行，写 prompt
+/// 体验差；改用 `TextEditor`（底层 NSTextView）即可。TextEditor 没有原生 placeholder
+/// 所以这里用 ZStack overlay 一层灰字模拟，text 为空时显示。
+private struct PromptTextEditor: View {
+
+    /// 标题（显示在编辑器上方）
+    let label: String
+
+    /// placeholder 文本
+    let placeholder: String
+
+    /// 是否显示"必填"红字标记
+    let required: Bool
+
+    /// 内容双向绑定
+    @Binding var text: String
+
+    /// 编辑器最小高度
+    let minHeight: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SliceSpacing.xs) {
+            HStack {
+                Text(label)
+                    .font(SliceFont.subheadline)
+                    .foregroundColor(SliceColor.textPrimary)
+                Spacer()
+                if required {
+                    Text("必填")
+                        .font(SliceFont.caption)
+                        .foregroundColor(SliceColor.error)
+                }
+            }
+
+            ZStack(alignment: .topLeading) {
+                // 占位提示：仅 text 为空时显示；禁用 hit-test 不挡编辑器
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(SliceFont.body)
+                        .foregroundColor(SliceColor.textTertiary)
+                        .padding(.horizontal, SliceSpacing.sm + 4)
+                        .padding(.vertical, SliceSpacing.sm + 4)
+                        .allowsHitTesting(false)
+                }
+                // 实际编辑器：隐藏默认背景，由外层圆角边框负责视觉
+                TextEditor(text: $text)
+                    .textEditorStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .font(SliceFont.body)
+                    .foregroundColor(SliceColor.textPrimary)
+                    .frame(minHeight: minHeight)
+                    .padding(SliceSpacing.sm)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: SliceRadius.control)
+                    .fill(SliceColor.background)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SliceRadius.control)
+                            .stroke(SliceColor.border, lineWidth: 0.5)
+                    )
+            )
         }
     }
 }
@@ -264,6 +400,20 @@ private extension DisplayMode {
         case .window:  return "浮窗"
         case .bubble:  return "气泡（v0.2）"
         case .replace: return "替换（v0.2）"
+        }
+    }
+}
+
+// MARK: - ToolLabelStyle + displayLabel
+
+/// 为 ToolLabelStyle 补充本地化展示标签（文件内 extension，避免污染 SliceCore）
+private extension ToolLabelStyle {
+    /// 用于 Picker 展示的中文标签
+    var displayLabel: String {
+        switch self {
+        case .icon:        return "图标"
+        case .name:        return "名称"
+        case .iconAndName: return "图标+名称"
         }
     }
 }

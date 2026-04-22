@@ -5,22 +5,34 @@ import SwiftUI
 
 /// 外观设置页
 ///
-/// 提供三选一外观模式切换（跟随系统 / 浅色 / 深色），
-/// 用户点击后立即通过 `SettingsViewModel.setAppearance(_:)` 持久化，
-/// 无需额外的"保存"操作——即时生效。
+/// 提供三选一外观模式切换（跟随系统 / 浅色 / 深色）。
+/// 切换走 `ThemeManager.setMode(_:)`——这是**应用主题的唯一真相源**：
+///   - 菜单栏「外观」子菜单也走这条路径；
+///   - AppContainer 启动时把 `themeManager.onModeChange` 接到 ConfigurationStore，
+///     所以一次 setMode 调用同时完成：UI 切换（`AppDelegate.applyAppearanceToAllWindows`
+///     的 Observation 追踪会触发）+ 持久化（onModeChange 回调写 config.json）。
+///
+/// 历史坑：早先版本此页调的是 `SettingsViewModel.setAppearance(_:)`，只更新
+/// `configuration.appearance` 与 `viewModel.appearance` 并写盘，**没触发 ThemeManager**，
+/// 造成勾选看起来切换了但窗口 NSAppearance 没变。现在统一走 ThemeManager。
 ///
 /// 依赖：
-///   - `SettingsViewModel` 通过 `@ObservedObject` 注入，读取 `viewModel.appearance`
-///     并调用 `viewModel.setAppearance(_:)`
+///   - `@Environment(ThemeManager.self)`：由 AppDelegate 注入到 SettingsScene 子树，
+///     负责读写当前 mode
+///   - `SettingsViewModel`：保留 viewModel 参数以兼容 SettingsScene 调用点，
+///     当前实现不直接使用（appearance 读写全部委托给 ThemeManager）
 ///   - `AppearanceMode.displayName`（DesignSystem 扩展）提供中文展示名
 ///   - `SectionCard`（DesignSystem）提供圆角卡片样式分组
 public struct AppearanceSettingsPage: View {
 
-    /// 设置视图模型，外观页通过它读取当前模式并触发持久化
+    /// 设置视图模型——保留以兼容 SettingsScene 当前调用签名；本页不读写它
     @ObservedObject private var viewModel: SettingsViewModel
 
+    /// 全局主题管理器，点击切换时直接调 setMode；同时 mode 变化会驱动本页重绘
+    @Environment(ThemeManager.self) private var themeManager
+
     /// 构造外观设置页
-    /// - Parameter viewModel: 宿主注入的设置视图模型
+    /// - Parameter viewModel: 宿主注入的设置视图模型（当前未使用，保留以避免破坏调用签名）
     public init(viewModel: SettingsViewModel) {
         self.viewModel = viewModel
     }
@@ -35,12 +47,11 @@ public struct AppearanceSettingsPage: View {
                 ForEach(AppearanceMode.allCases, id: \.self) { mode in
                     AppearanceModeRow(
                         mode: mode,
-                        isSelected: viewModel.appearance == mode,
+                        isSelected: themeManager.mode == mode,
                         onSelect: {
-                            // 点击后立即启动 async 任务持久化，不阻塞主线程
-                            Task {
-                                await viewModel.setAppearance(mode)
-                            }
+                            // 统一走 ThemeManager：UI 切换由 withObservationTracking 驱动，
+                            // 持久化由 onModeChange 回调完成——无需再触发 viewModel
+                            themeManager.setMode(mode)
                         }
                     )
                     // 非最后一项加分隔线

@@ -78,17 +78,74 @@ final class MenuBarController: NSObject {
 
     // MARK: - 图标生成
 
-    /// 生成基础图标（无装饰）
+    /// 生成基础图标（自定义合成）
     ///
-    /// 使用 "scissors" SF Symbol，契合 SliceAI 的"划词"语义。
+    /// 视觉：中心 `character.cursor.ibeam`（文字光标）+ 右上角 / 左下角两颗
+    /// 大小不一的 `sparkle`，像"魔法棒"风格但把魔法棒本体换成了 I-beam 光标。
+    /// 寓意"划词 + 智能润色/重写"——这正是 SliceAI 的核心动作。
+    ///
+    /// 实现：20×20 bitmap 上分三次 `draw(in:)` 叠加 SF Symbol，最后 `isTemplate=true`
+    /// 让菜单栏按系统深浅色自动反色。需要 macOS 13+ 提供 `sparkle` 单数符号，
+    /// 项目约束 macOS 14，安全。
     private static func baseIcon() -> NSImage? {
-        NSImage(systemSymbolName: "scissors", accessibilityDescription: "SliceAI")
+        // 18×18 是 macOS 状态栏约定的图标尺寸
+        let size = CGSize(width: 20, height: 20)
+        let image = NSImage(size: size)
+
+        image.lockFocus()
+        // 1. 中心主体：I-beam 光标——用 .bold 加粗字符"A"和 I-beam 的竖线，
+        //    避免在菜单栏小尺寸下笔画过细、视觉发虚
+        drawSymbol(name: "character.cursor.ibeam", pointSize: 12,
+                   weight: .black, center: CGPoint(x: 10, y: 9))
+        // 2. 右上角较大 sparkle——weight .semibold 让星芒稍粗，
+        //    与主体视觉重量一致（太细会被主图压没）
+        drawSymbol(name: "sparkle", pointSize: 4,
+                   weight: .semibold, center: CGPoint(x: 18, y: 6))
+        // 3. 左下角较小 sparkle——辅助闪光，平衡构图
+        drawSymbol(name: "sparkle", pointSize: 5,
+                   weight: .bold, center: CGPoint(x: 2, y: 14))
+        image.unlockFocus()
+
+        // 作为 template 让菜单栏自动处理深浅色反色
+        image.isTemplate = true
+        return image
+    }
+
+    /// 在当前 lockFocus context 里按指定中心点渲染一个 SF Symbol
+    ///
+    /// 使用 `NSImage.SymbolConfiguration(pointSize:weight:)` 控制 symbol 字号；
+    /// `withSymbolConfiguration` 返回配置后的 NSImage，其 size 即为视觉像素尺寸。
+    /// 绘制时以 `center` 为中心，避免手动对齐误差。
+    /// - Parameters:
+    ///   - name: SF Symbol 名
+    ///   - pointSize: symbol 字号（pt）
+    ///   - weight: symbol 粗细
+    ///   - center: 绘制中心点（NSImage 坐标系，左下原点）
+    private static func drawSymbol(
+        name: String,
+        pointSize: CGFloat,
+        weight: NSFont.Weight,
+        center: CGPoint
+    ) {
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return }
+        let glyphSize = symbol.size
+        let rect = CGRect(
+            x: center.x - glyphSize.width / 2,
+            y: center.y - glyphSize.height / 2,
+            width: glyphSize.width,
+            height: glyphSize.height
+        )
+        symbol.draw(in: rect)
     }
 
     /// 生成带紫色小红点的图标（右上角叠加 6pt 圆点）
     ///
-    /// 实现方式：先在离屏 bitmap context 中绘制 scissors 图标，
+    /// 实现方式：先在离屏 bitmap context 中绘制基础图标（I-beam 光标 + 两颗 sparkle），
     /// 再在右上角叠加一个实心圆（SliceAI 品牌紫色），最后合成为 NSImage。
+    /// 注意：由于叠加了彩色圆点，合成图无法作为 template 使用（`isTemplate = false`），
+    /// 菜单栏不会自动反色——这是既有行为，新的 baseIcon 不改变它。
     private static func badgedIcon() -> NSImage? {
         // 图标尺寸与系统状态栏约定一致
         let size = CGSize(width: 18, height: 18)
