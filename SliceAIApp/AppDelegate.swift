@@ -25,11 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 诊断日志器；用于追踪划词触发链路在哪一层断开
     ///
     /// 与 `ConfigurationStore` 的 `Logger` 模式一致；subsystem 取 App 而非 Kit
-    /// 以便在 Console.app 用 `subsystem:com.sliceai.app` 一键过滤本进程的日志。
+    /// 以便在 Console.app 用 `subsystem:com.sliceai.lite` 一键过滤本进程的日志。
     /// 默认级别为 `.info`，Console.app 需要在菜单栏开启 "Action → Include Info
     /// Messages"；命令行可用：
-    /// `log stream --predicate 'subsystem == "com.sliceai.app"' --level info`
-    private static let log = Logger(subsystem: "com.sliceai.app", category: "AppDelegate")
+    /// `log stream --predicate 'subsystem == "com.sliceai.lite"' --level info`
+    private static let log = Logger(subsystem: "com.sliceai.lite", category: "AppDelegate")
 
     /// 应用的 DI 组合根，生命周期与 AppDelegate 相同
     let container: AppContainer

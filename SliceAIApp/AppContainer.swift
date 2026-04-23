@@ -22,7 +22,7 @@ import Windowing
 @MainActor
 final class AppContainer {
 
-    /// 配置文件读写 actor；路径固定为 `~/Library/Application Support/SliceAI/config.json`
+    /// 配置文件读写 actor；路径固定为 `~/Library/Application Support/SliceAI-lite/config.json`
     let configStore: FileConfigurationStore
     /// macOS Keychain 读写结构体；按 providerId 查 API Key
     let keychain: KeychainStore

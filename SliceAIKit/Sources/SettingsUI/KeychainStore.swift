@@ -13,8 +13,8 @@ public struct KeychainStore: KeychainAccessing {
     private let service: String
 
     /// 初始化
-    /// - Parameter service: service 名称，默认为 `com.sliceai.app.providers`
-    public init(service: String = "com.sliceai.app.providers") {
+    /// - Parameter service: service 名称，默认为 `com.sliceai.lite.providers`
+    public init(service: String = "com.sliceai.lite.providers") {
         self.service = service
     }
 

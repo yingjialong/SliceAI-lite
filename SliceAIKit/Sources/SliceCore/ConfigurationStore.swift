@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 /// FileConfigurationStore 的日志器，便于调试 load/save 路径与错误转译
-private let configLog = Logger(subsystem: "com.sliceai.core", category: "ConfigurationStore")
+private let configLog = Logger(subsystem: "com.sliceai.lite.core", category: "ConfigurationStore")
 
 /// 以 JSON 文件为后端的 `Configuration` 读写 actor
 ///
@@ -12,7 +12,7 @@ private let configLog = Logger(subsystem: "com.sliceai.core", category: "Configu
 ///   - `load()` 会把底层 JSON / IO 错误统一转译为 `SliceError.configuration(.invalidJSON)`，
 ///     以便上层只处理 `SliceError` 族；
 ///   - `save()` 使用原子写入（`.atomic`）+ 自动创建父目录，杜绝半写文件；
-///   - `standardFileURL()` 给出 App 部署时的约定路径 `~/Library/Application Support/SliceAI/config.json`，
+///   - `standardFileURL()` 给出 App 部署时的约定路径 `~/Library/Application Support/SliceAI-lite/config.json`，
 ///     但 actor 本身并不依赖这条路径，便于测试注入临时文件。
 public actor FileConfigurationStore: ConfigurationProviding {
 
@@ -99,7 +99,7 @@ public actor FileConfigurationStore: ConfigurationProviding {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(configuration)
-        // 父目录可能尚未创建（例如 ~/Library/Application Support/SliceAI）
+        // 父目录可能尚未创建（例如 ~/Library/Application Support/SliceAI-lite）
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -126,13 +126,13 @@ public actor FileConfigurationStore: ConfigurationProviding {
     }
 
     /// App 部署时 config.json 的约定路径
-    /// - Returns: `~/Library/Application Support/SliceAI/config.json`
+    /// - Returns: `~/Library/Application Support/SliceAI-lite/config.json`
     public static func standardFileURL() -> URL {
         let fm = FileManager.default
         // `.first!` 安全：userDomainMask 下的 ApplicationSupport 在 macOS 上永远存在
         // swiftlint:disable:next force_unwrapping
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("SliceAI", isDirectory: true)
+            .appendingPathComponent("SliceAI-lite", isDirectory: true)
         return appSupport.appendingPathComponent("config.json")
     }
 }

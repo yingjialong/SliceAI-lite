@@ -62,7 +62,7 @@ SliceAIKit  (SliceAIKit/Package.swift, 8 个 library target)
 - **DesignSystem 只被 UI 层依赖**（Windowing / Permissions / SettingsUI），**严禁被 SliceCore / LLMProviders / SelectionCapture / HotkeyManager 反向依赖**——否则领域层又会被拖进 AppKit，破坏"未来跑 CLI / MCP server"的前提。
 - **Provider 是 protocol**（`SliceCore/LLMProvider.swift`）：当前只有 OpenAI 兼容实现，社区可零改动新增 Claude / Gemini / Ollama。
 - **模块间只通过 SliceCore 的 protocol 通信**：`ConfigurationProviding`、`KeychainAccessing`、`LLMProvider` 都是 protocol，`SelectionSource` / `PasteboardProtocol` / `CopyKeystrokeInvoking` 同理。这让单元测试可以注入 Fake，模块替换不影响其他层。
-- **配置与密钥严格分离**：`Configuration` 走 JSON（`~/Library/Application Support/SliceAI/config.json`，schema 见 `config.schema.json`）；API Key 永远在 Keychain（`service: com.sliceai.app.providers`），通过 `Provider.apiKeyRef = "keychain:<account>"` 间接引用。
+- **配置与密钥严格分离**：`Configuration` 走 JSON（`~/Library/Application Support/SliceAI-lite/config.json`，schema 见 `config.schema.json`）；API Key 永远在 Keychain（`service: com.sliceai.lite.providers`），通过 `Provider.apiKeyRef = "keychain:<account>"` 间接引用。
 - **Composition Root 集中在 `SliceAIApp/AppContainer.swift`**：所有跨模块依赖在 App 启动时一次性装配，业务层不再分散 init。
 - **主题切换中枢是 `DesignSystem/Theme/ThemeManager`**：读写 `Configuration.appearanceMode`（system / light / dark），由 `AppContainer` 在启动时注入一次；切换时通过 `onModeChange` 回调把变更持久化回 `ConfigurationStore`。UI 层只读环境里的 `ThemeManager`，不直接碰 `NSApp.appearance`。
 
