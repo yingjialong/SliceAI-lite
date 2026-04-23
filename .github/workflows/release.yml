@@ -28,28 +28,28 @@ jobs:
       - name: Compute SHA256
         id: sha
         run: |
-          sha=$(shasum -a 256 "build/SliceAI-${{ steps.ver.outputs.version }}.dmg" | awk '{print $1}')
+          sha=$(shasum -a 256 "build/SliceAI-lite-${{ steps.ver.outputs.version }}.dmg" | awk '{print $1}')
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SliceAI-${{ steps.ver.outputs.version }}.dmg
-          path: build/SliceAI-${{ steps.ver.outputs.version }}.dmg
+          name: SliceAI-lite-${{ steps.ver.outputs.version }}.dmg
+          path: build/SliceAI-lite-${{ steps.ver.outputs.version }}.dmg
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/SliceAI-${{ steps.ver.outputs.version }}.dmg
+          files: build/SliceAI-lite-${{ steps.ver.outputs.version }}.dmg
           draft: true
           generate_release_notes: true
           body: |
-            ## SliceAI ${{ steps.ver.outputs.version }}
+            ## SliceAI-lite ${{ steps.ver.outputs.version }}
 
             **Unsigned DMG.** Installation steps:
-            1. Mount the DMG and drag `SliceAI.app` to `/Applications`
+            1. Mount the DMG and drag `SliceAI-lite.app` to `/Applications`
             2. First launch: Right-click -> Open (because unsigned)
-               Or run: `xattr -d com.apple.quarantine /Applications/SliceAI.app`
+               Or run: `xattr -d com.apple.quarantine /Applications/SliceAI-lite.app`
             3. Grant Accessibility permission when prompted
             4. Enter your OpenAI API key (or any OpenAI-compatible base URL + key)
 

@@ -22,7 +22,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		533BA76C2F9691D20078EF4F /* SliceAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SliceAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		533BA76C2F9691D20078EF4F /* SliceAI-lite.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SliceAI-lite.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		533BA7802F9695D00078EF4F /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
 		533BA7812F9695D00078EF4F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		533BA7822F9695D00078EF4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -63,7 +63,7 @@
 		533BA76D2F9691D20078EF4F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				533BA76C2F9691D20078EF4F /* SliceAI.app */,
+				533BA76C2F9691D20078EF4F /* SliceAI-lite.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -114,7 +114,7 @@
 				533BA79D2F969F330078EF4F /* Windowing */,
 			);
 			productName = SliceAI;
-			productReference = 533BA76C2F9691D20078EF4F /* SliceAI.app */;
+			productReference = 533BA76C2F9691D20078EF4F /* SliceAI-lite.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -321,7 +321,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SliceAI-Info.plist";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SliceAI 使用 Apple 事件转发选中文字请求。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SliceAI-lite 使用 Apple 事件转发选中文字请求。";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -330,7 +330,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sliceai.lite;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "SliceAI-lite";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -372,7 +372,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SliceAI-Info.plist";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SliceAI 使用 Apple 事件转发选中文字请求。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "SliceAI-lite 使用 Apple 事件转发选中文字请求。";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -381,7 +381,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sliceai.lite;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "SliceAI-lite";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;

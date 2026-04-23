@@ -32,7 +32,7 @@ swiftlint lint --strict
 xcodebuild -project SliceAI.xcodeproj -scheme SliceAI -configuration Debug build
 
 # 打包 unsigned DMG（默认版本 0.1.0；CI 用 tag 触发）
-scripts/build-dmg.sh                # 输出 build/SliceAI-0.1.0.dmg
+scripts/build-dmg.sh                # 输出 build/SliceAI-lite-0.1.0.dmg
 scripts/build-dmg.sh 0.2.0          # 自定义版本号
 ```
 
@@ -41,7 +41,7 @@ scripts/build-dmg.sh 0.2.0          # 自定义版本号
 两层结构：**App target（薄壳）+ 单一 Local SwiftPM Package**。
 
 ```
-SliceAI.app  (Xcode App target, SliceAIApp/)
+SliceAI-lite.app  (Xcode App target, SliceAIApp/)
   ├─ @main 入口、菜单栏、Onboarding、Composition Root（AppContainer）
   └─ depends on → SliceAIKit (Local SwiftPM)
 

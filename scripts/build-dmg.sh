@@ -2,7 +2,7 @@
 # scripts/build-dmg.sh
 # 用法: scripts/build-dmg.sh [version]
 # 默认 version: 0.1.0
-# 产物: build/SliceAI-<version>.dmg
+# 产物: build/SliceAI-lite-<version>.dmg
 #
 # 功能说明:
 #   1. 使用 xcodebuild 归档 SliceAI.xcodeproj（Release 配置，unsigned）
@@ -56,21 +56,21 @@ echo "[build-dmg] Archiving $SCHEME (unsigned) ..."
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
     -configuration Release \
     -derivedDataPath "$BUILD_DIR/DerivedData" \
-    -archivePath "$BUILD_DIR/SliceAI.xcarchive" \
+    -archivePath "$BUILD_DIR/SliceAI-lite.xcarchive" \
     CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
     archive
 
 # 从 archive 中取出 .app 到暂存目录
 echo "[build-dmg] Copying .app to staging ..."
-cp -R "$BUILD_DIR/SliceAI.xcarchive/Products/Applications/SliceAI.app" "$DMG_STAGING/"
+cp -R "$BUILD_DIR/SliceAI-lite.xcarchive/Products/Applications/SliceAI-lite.app" "$DMG_STAGING/"
 
 # 创建 Applications 软链，标准 DMG 安装体验（拖拽到 Applications）
 ln -s /Applications "$DMG_STAGING/Applications"
 
 # 打包 dmg（UDZO：压缩、只读，分发友好）
-DMG_PATH="$BUILD_DIR/SliceAI-$VERSION.dmg"
+DMG_PATH="$BUILD_DIR/SliceAI-lite-$VERSION.dmg"
 echo "[build-dmg] Creating DMG: $DMG_PATH ..."
-hdiutil create -volname "SliceAI $VERSION" \
+hdiutil create -volname "SliceAI-lite $VERSION" \
     -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_PATH"
 
 echo "[build-dmg] Built: $DMG_PATH"
