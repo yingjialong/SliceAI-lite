@@ -64,6 +64,33 @@ xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
 echo "[build-dmg] Copying .app to staging ..."
 cp -R "$BUILD_DIR/SliceAI-lite.xcarchive/Products/Applications/SliceAI-lite.app" "$DMG_STAGING/"
 
+# Ad-hoc 签名 app bundle，让 macOS TCC 数据库稳定识别 cdhash + bundle id。
+#
+# 背景：archive 时用 CODE_SIGNING_ALLOWED=NO 完全跳过 codesign，但 macOS linker
+# 仍会给二进制加一个最小的 "linker-signed" 伪签名——Identifier 是文件名而不是
+# bundle id，且不封印 resources。TCC 用 cdhash + identifier + sealed resources
+# 综合判断 app 身份，linker-signed 这些字段全错或缺，导致 Accessibility 授权
+# 一刷新就失效（用户表象：系统设置里勾选了，但划词不响应）。
+#
+# Ad-hoc 签名（--sign -）不需要任何开发者证书或账号，但能产生完整的 cdhash
+# + sealed resources，让 TCC 稳定记住权限授予状态。--options runtime 与
+# pbxproj 的 ENABLE_HARDENED_RUNTIME=YES 对齐；--entitlements 注入与 archive
+# 时 CODE_SIGN_ENTITLEMENTS 一致的 plist。
+#
+# 注意：--deep 在 macOS 12+ 是 deprecated，但本 app 没有 nested executable
+# （SliceAIKit 是 static library，编译进主二进制），实际等同于只签主 bundle，
+# warning 可忽略。如果以后引入 dynamic framework / plugin / XPC service，
+# 需改为按 nested item 单独签。
+echo "[build-dmg] Ad-hoc signing app for stable TCC identity ..."
+codesign --force --deep --sign - \
+    --entitlements "$PROJECT_ROOT/SliceAIApp/SliceAI.entitlements" \
+    --options runtime \
+    "$DMG_STAGING/SliceAI-lite.app"
+
+# 验证签名状态：必须是 adhoc（非 linker-signed）+ Identifier=com.sliceai.lite
+# + Sealed Resources 存在；否则 fail-fast 防止伪签名退化未被发现
+codesign -dvv "$DMG_STAGING/SliceAI-lite.app" 2>&1 | head -5
+
 # 创建 Applications 软链，标准 DMG 安装体验（拖拽到 Applications）
 ln -s /Applications "$DMG_STAGING/Applications"
 
