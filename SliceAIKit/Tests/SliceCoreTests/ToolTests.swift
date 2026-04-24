@@ -59,4 +59,43 @@ final class ToolTests: XCTestCase {
         XCTAssertEqual(decoded.id, "old-tool")
         XCTAssertEqual(decoded.name, "Old Tool")
     }
+
+    /// 旧版 JSON 不含 thinkingModelId / thinkingEnabled 时应解码成 nil / false
+    func test_toolDecode_legacyJSON_thinkingFieldsDefaultToNilFalse() throws {
+        let legacyJSON = """
+        {
+          "id": "summary",
+          "name": "Summary",
+          "icon": "doc.text",
+          "userPrompt": "Summarize: {{selection}}",
+          "providerId": "openai",
+          "displayMode": "window",
+          "variables": {}
+        }
+        """.data(using: .utf8)!  // swiftlint:disable:this force_unwrapping
+        let tool = try JSONDecoder().decode(Tool.self, from: legacyJSON)
+        XCTAssertNil(tool.thinkingModelId)
+        XCTAssertFalse(tool.thinkingEnabled)
+    }
+
+    /// 新版 JSON 含 thinkingModelId + thinkingEnabled 时应正确解码
+    func test_toolDecode_newJSON_thinkingFieldsRoundTrip() throws {
+        let newJSON = """
+        {
+          "id": "summary",
+          "name": "Summary",
+          "icon": "doc.text",
+          "userPrompt": "Summarize: {{selection}}",
+          "providerId": "deepseek",
+          "modelId": "deepseek-chat",
+          "displayMode": "window",
+          "variables": {},
+          "thinkingModelId": "deepseek-reasoner",
+          "thinkingEnabled": true
+        }
+        """.data(using: .utf8)!  // swiftlint:disable:this force_unwrapping
+        let tool = try JSONDecoder().decode(Tool.self, from: newJSON)
+        XCTAssertEqual(tool.thinkingModelId, "deepseek-reasoner")
+        XCTAssertTrue(tool.thinkingEnabled)
+    }
 }

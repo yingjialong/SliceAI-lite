@@ -35,4 +35,53 @@ final class ChatTypesTests: XCTestCase {
         XCTAssertEqual(FinishReason.contentFilter.rawValue, "content_filter")
         XCTAssertEqual(FinishReason.toolCalls.rawValue, "tool_calls")
     }
+
+    /// extraBody 内容相同时两个 ChatRequest 应相等（NSDictionary 桥接比较）
+    func test_chatRequest_extraBodyEqual_whenContentsMatch() {
+        let a = ChatRequest(model: "m", messages: [],
+                            extraBody: ["thinking": ["type": "enabled"]])
+        let b = ChatRequest(model: "m", messages: [],
+                            extraBody: ["thinking": ["type": "enabled"]])
+        XCTAssertEqual(a, b)
+    }
+
+    /// extraBody 内容不同时两个 ChatRequest 应不相等
+    func test_chatRequest_extraBodyDiffer_notEqual() {
+        let a = ChatRequest(model: "m", messages: [],
+                            extraBody: ["thinking": ["type": "enabled"]])
+        let b = ChatRequest(model: "m", messages: [],
+                            extraBody: ["thinking": ["type": "disabled"]])
+        XCTAssertNotEqual(a, b)
+    }
+
+    /// 一边 nil 一边有内容的 extraBody 应不相等
+    func test_chatRequest_extraBodyOneNil_notEqual() {
+        let a = ChatRequest(model: "m", messages: [], extraBody: nil)
+        let b = ChatRequest(model: "m", messages: [], extraBody: ["foo": 1])
+        XCTAssertNotEqual(a, b)
+    }
+
+    /// extraBody 不参与 Codable：encode 后的 JSON 不含 extraBody 字段
+    func test_chatRequest_extraBody_notInJSONOutput() throws {
+        let req = ChatRequest(model: "m", messages: [],
+                              extraBody: ["thinking": ["type": "enabled"]])
+        let data = try JSONEncoder().encode(req)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertNotNil(json)
+        XCTAssertNil(json?["extraBody"])
+        XCTAssertNil(json?["thinking"])  // 也不会泄漏到 root
+    }
+
+    /// ChatChunk 的 reasoningDelta 字段在构造时正确赋值
+    func test_chatChunk_reasoningDelta_init() {
+        let chunk = ChatChunk(delta: "answer", reasoningDelta: "thinking", finishReason: nil)
+        XCTAssertEqual(chunk.delta, "answer")
+        XCTAssertEqual(chunk.reasoningDelta, "thinking")
+    }
+
+    /// 默认参数下 reasoningDelta 为 nil（兼容非 thinking 模型）
+    func test_chatChunk_reasoningDelta_defaultsNil() {
+        let chunk = ChatChunk(delta: "answer")
+        XCTAssertNil(chunk.reasoningDelta)
+    }
 }
