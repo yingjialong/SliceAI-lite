@@ -25,8 +25,19 @@ struct OpenAIStreamChoice: Decodable {
     }
 }
 
-/// chunk 中的增量字段；MVP 仅关注文本 content
+/// chunk 中的增量字段；关注文本 content 与 thinking 模式下的 reasoning 字段
 struct OpenAIStreamDelta: Decodable {
     /// 新增文本片段；首帧通常只带 role 而无 content；finish 帧 delta 为 {}，故允许 nil
     let content: String?
+    /// OpenRouter 统一 reasoning 字段：所有 vendor 的 thinking 增量统一映射到 delta.reasoning
+    let reasoning: String?
+    /// DeepSeek V4 风格 reasoning 字段：DeepSeek 直连 API 在 delta.reasoning_content 里返回 thinking 文本
+    let reasoningContent: String?
+
+    /// 将 snake_case 的 reasoning_content 映射为 Swift 端的 camelCase
+    private enum CodingKeys: String, CodingKey {
+        case content
+        case reasoning
+        case reasoningContent = "reasoning_content"
+    }
 }
