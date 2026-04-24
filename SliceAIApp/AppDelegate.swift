@@ -357,7 +357,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             showThinkingToggle: showToggle,
             thinkingEnabled: tool.thinkingEnabled,
-            onToggleThinking: makeToggleThinkingAction(for: tool, payload: payload)
+            onToggleThinking: makeToggleThinkingAction(
+                for: tool,
+                payload: payload,
+                cancelStream: { streamTask.cancel() }
+            )
         )
     }
 
@@ -376,22 +380,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 构造 thinking 切换 closure：持久化后用最新 tool 快照重新执行，避免 stale 捕获
+    /// 构造 thinking 切换 closure：先取消当前 stream，持久化后用最新 tool 快照重新执行
+    ///
+    /// 关键点：
+    /// - 必须先 `cancelStream()` 再 `execute()`，否则旧 stream 会继续 append chunk，
+    ///   与新 stream 的 chunk 在 ResultPanel 内并发写入 viewModel.text 导致输出乱序
+    /// - `cancelStream` 由 caller 注入（捕获 streamTask），helper 不持有 streamTask 引用
+    /// - toggleThinking 后 `tool` 局部变量 stale，需从最新 configuration 取 fresh 快照
     private func makeToggleThinkingAction(
         for tool: SliceCore.Tool,
-        payload: SelectionPayload
+        payload: SelectionPayload,
+        cancelStream: @escaping @Sendable () -> Void
     ) -> (@MainActor () -> Void) {
         { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
+                cancelStream()
                 await self.container.settingsViewModel.toggleThinking(for: tool.id)
-                // tool 变量已 stale，需从最新 configuration 取更新后的快照
                 guard let fresh = self.container.settingsViewModel.configuration.tools
                     .first(where: { $0.id == tool.id }) else { return }
-                let tName = fresh.name
-                let tEnabled = fresh.thinkingEnabled
                 // swiftlint:disable:next line_length
-                Self.log.info("onToggleThinking: re-run tool=\(tName, privacy: .public) enabled=\(tEnabled, privacy: .public)")
+                Self.log.info("onToggleThinking: re-run tool=\(fresh.name, privacy: .public) enabled=\(fresh.thinkingEnabled, privacy: .public)")
                 self.execute(tool: fresh, payload: payload)
             }
         }
