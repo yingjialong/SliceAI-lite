@@ -210,7 +210,6 @@ public struct ToolEditorView: View {
                             get: { tool.thinkingModelId ?? "" },
                             set: { newValue in
                                 tool.thinkingModelId = newValue.isEmpty ? nil : newValue
-                                print("[ToolEditorView] thinkingModelId -> \(String(describing: tool.thinkingModelId))")
                             }
                         )
                     )
@@ -218,6 +217,16 @@ public struct ToolEditorView: View {
                     .multilineTextAlignment(.trailing)
                     .foregroundColor(SliceColor.textPrimary)
                     .font(SliceFont.body)
+                }
+            } else if case .byParameter = currentProvider?.thinking {
+                // byParameter Provider：thinking 已在 Provider 层配置，工具层无需额外字段
+                // spec §5.2 要求显示一行只读说明，避免用户误以为缺少配置
+                SettingsRow("Thinking 模式") {
+                    Text("该 Provider 已配置参数透传，无需在工具层配置")
+                        .font(SliceFont.body)
+                        .foregroundColor(SliceColor.textSecondary)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
 
