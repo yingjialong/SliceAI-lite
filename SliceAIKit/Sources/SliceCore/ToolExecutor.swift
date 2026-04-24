@@ -43,7 +43,6 @@ public actor ToolExecutor {
         tool: Tool,
         payload: SelectionPayload
     ) async throws -> AsyncThrowingStream<ChatChunk, any Error> {
-
         // 1. 取当前配置，并按 tool.providerId 定位目标 Provider
         let cfg = await configurationProvider.current()
         guard let provider = cfg.providers.first(where: { $0.id == tool.providerId }) else {
@@ -79,16 +78,99 @@ public actor ToolExecutor {
         }
         messages.append(ChatMessage(role: .user, content: userText))
 
-        // 5. 构造 ChatRequest：model 优先使用 tool.modelId，其次用 provider.defaultModel
+        // 5. 构造 ChatRequest：按 tool.thinkingEnabled × provider.thinking 决定 model + extraBody
+        let baseModelId = tool.modelId ?? provider.defaultModel
+        let (resolvedModelId, extraBody) = try Self.resolveThinking(
+            thinking: provider.thinking,
+            tool: tool,
+            providerId: provider.id,
+            baseModelId: baseModelId
+        )
         let request = ChatRequest(
-            model: tool.modelId ?? provider.defaultModel,
+            model: resolvedModelId,
             messages: messages,
             temperature: tool.temperature,
-            maxTokens: nil
+            maxTokens: nil,
+            extraBody: extraBody
         )
 
         // 6. 通过工厂拿到具体 LLMProvider 实例，启动流式请求
         let llm = try providerFactory.make(for: provider, apiKey: apiKey)
         return try await llm.stream(request: request)
+    }
+
+    /// 根据 provider.thinking × tool.thinkingEnabled 决定最终 model id 与 extraBody
+    ///
+    /// 提取为独立方法，使 execute() 函数体保持在 SwiftLint function_body_length 限制内。
+    ///
+    /// - Parameters:
+    ///   - thinking: Provider 声明的 thinking 切换机制，nil 表示不支持 thinking
+    ///   - tool: 工具定义，提供 thinkingEnabled / thinkingModelId / id（仅用于错误信息）
+    ///   - providerId: Provider ID，仅用于错误信息（非用户 payload）
+    ///   - baseModelId: thinking 未触发时使用的默认 model id
+    /// - Returns: `(model, extraBody)` 元组
+    /// - Throws: `SliceError.configuration(.invalidJSON)` — byModel 缺少 thinkingModelId，
+    ///           或 byParameter 的 JSON 字符串无法解析
+    private static func resolveThinking(
+        thinking: ProviderThinkingCapability?,
+        tool: Tool,
+        providerId: String,
+        baseModelId: String
+    ) throws -> (modelId: String, extraBody: [String: Any]?) {
+        guard let thinking else {
+            // Provider 不支持 thinking，忽略 thinkingEnabled，直接使用默认 model
+            return (baseModelId, nil)
+        }
+
+        switch thinking {
+        case .byModel:
+            // byModel：thinking=on 时必须切换到 thinkingModelId
+            if tool.thinkingEnabled {
+                guard let alt = tool.thinkingModelId else {
+                    let msg = "Tool '\(tool.id)' thinkingEnabled=true but no thinkingModelId"
+                        + " for Provider '\(providerId)' (byModel)"
+                    throw SliceError.configuration(.invalidJSON(msg))
+                }
+                // 切换到 thinking 专用 model，不注入 extraBody
+                return (alt, nil)
+            }
+            // thinking=off：使用默认 model
+            return (baseModelId, nil)
+
+        case .byParameter(let enableJSON, let disableJSON):
+            // byParameter：根据 thinkingEnabled 选择对应 JSON payload
+            let payload = tool.thinkingEnabled ? enableJSON : disableJSON
+            guard let json = payload else {
+                // disableBodyJSON=nil 时不 merge，extraBody 为 nil
+                return (baseModelId, nil)
+            }
+            // 解析 JSON 字符串到 [String: Any]
+            let dict = try Self.parseExtraBodyJSON(json)
+            return (baseModelId, dict)
+        }
+    }
+
+    /// 将 JSON 字符串解析为 [String: Any] 字典
+    ///
+    /// - Parameter json: thinking template 的 JSON 字符串（enableBodyJSON / disableBodyJSON）
+    /// - Returns: 解析后的字典，用作 ChatRequest.extraBody
+    /// - Throws: `SliceError.configuration(.invalidJSON)` — 非合法 JSON 或顶层不是 object
+    private static func parseExtraBodyJSON(_ json: String) throws -> [String: Any] {
+        do {
+            let data = Data(json.utf8)
+            guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw SliceError.configuration(
+                    .invalidJSON("thinking template payload must be a JSON object")
+                )
+            }
+            return dict
+        } catch let error as SliceError {
+            throw error
+        } catch {
+            // JSONSerialization 失败，内容不重要（可能含用户 secret），不透传
+            throw SliceError.configuration(
+                .invalidJSON("thinking template parse failed (see tool/provider config)")
+            )
+        }
     }
 }
