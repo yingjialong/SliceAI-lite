@@ -109,8 +109,9 @@ public actor ToolExecutor {
     ///   - providerId: Provider ID，仅用于错误信息（非用户 payload）
     ///   - baseModelId: thinking 未触发时使用的默认 model id
     /// - Returns: `(model, extraBody)` 元组
-    /// - Throws: `SliceError.configuration(.invalidJSON)` — byModel 缺少 thinkingModelId，
-    ///           或 byParameter 的 JSON 字符串无法解析
+    /// - Throws:
+    ///   - `SliceError.configuration(.incompleteThinkingConfig)` — byModel 缺少 thinkingModelId
+    ///   - `SliceError.configuration(.invalidJSON)` — byParameter 的 JSON 字符串无法解析
     private static func resolveThinking(
         thinking: ProviderThinkingCapability?,
         tool: Tool,
@@ -127,9 +128,10 @@ public actor ToolExecutor {
             // byModel：thinking=on 时必须切换到 thinkingModelId
             if tool.thinkingEnabled {
                 guard let alt = tool.thinkingModelId else {
+                    // 用专用 case 而非 invalidJSON，使 ResultPanel 展示正确的用户引导文案
                     let msg = "Tool '\(tool.id)' thinkingEnabled=true but no thinkingModelId"
                         + " for Provider '\(providerId)' (byModel)"
-                    throw SliceError.configuration(.invalidJSON(msg))
+                    throw SliceError.configuration(.incompleteThinkingConfig(msg))
                 }
                 // 切换到 thinking 专用 model，不注入 extraBody
                 return (alt, nil)

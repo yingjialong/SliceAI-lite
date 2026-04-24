@@ -37,11 +37,16 @@ final class SliceErrorTests: XCTestCase {
         XCTAssertFalse(jsonErr.developerContext.contains("sk-bad"))
         XCTAssertTrue(jsonErr.developerContext.contains("<redacted>"))
 
-        // 4. 安全的数值 payload 保留
+        // 4. incompleteThinkingConfig 关联值（含 tool/provider id）同样脱敏
+        let thinkingErr = SliceError.configuration(.incompleteThinkingConfig("Tool 'my-tool' secret"))
+        XCTAssertFalse(thinkingErr.developerContext.contains("my-tool"))
+        XCTAssertTrue(thinkingErr.developerContext.contains("<redacted>"))
+
+        // 6. 安全的数值 payload 保留
         let sizeErr = SliceError.selection(.textTooLong(9999))
         XCTAssertTrue(sizeErr.developerContext.contains("9999"))
 
-        // 5. rateLimited 的数字也保留（向上取整、至少 1s）
+        // 7. rateLimited 的数字也保留（向上取整、至少 1s）
         let rlErr = SliceError.provider(.rateLimited(retryAfter: 0.9))
         XCTAssertTrue(rlErr.developerContext.contains("1"))   // ceil(0.9)=1
     }
@@ -98,6 +103,12 @@ final class SliceErrorTests: XCTestCase {
         // referencedProviderMissing：文案应包含缺失的 providerId 以便用户定位
         let missing = SliceError.configuration(.referencedProviderMissing("openai-xxx")).userMessage
         XCTAssertTrue(missing.contains("openai-xxx"), "got: \(missing)")
+
+        // incompleteThinkingConfig：文案应非空，且引导用户去设置补全 model id
+        let incomplete = SliceError.configuration(.incompleteThinkingConfig("t")).userMessage
+        XCTAssertFalse(incomplete.isEmpty)
+        // 关联值（tool/provider id 等）不应出现在 userMessage 中
+        XCTAssertFalse(incomplete.contains("\"t\""))
     }
 
     /// 覆盖 PermissionError 两种 case 的 userMessage

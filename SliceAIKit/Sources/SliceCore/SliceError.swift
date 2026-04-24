@@ -45,6 +45,8 @@ public enum SliceError: Error, Sendable, Equatable {
             case .schemaVersionTooNew(let v): return "configuration.schemaVersionTooNew(\(v))"
             case .invalidJSON: return "configuration.invalidJSON(<redacted>)"
             case .referencedProviderMissing(let id): return "configuration.referencedProviderMissing(\(id))"
+            // String payload 含 tool/provider id，符合脱敏约定，不透传原始值到日志
+            case .incompleteThinkingConfig: return "configuration.incompleteThinkingConfig(<redacted>)"
             }
         case .permission(let e):
             switch e {
@@ -109,6 +111,9 @@ public enum ConfigurationError: Error, Sendable, Equatable {
     case schemaVersionTooNew(Int)
     case invalidJSON(String)
     case referencedProviderMissing(String)
+    /// 工具配置不完整：byModel provider 选了 thinkingEnabled=true 但没填 thinkingModelId
+    /// 关联值是脱敏的描述（包含 tool id / provider id，不含 secret）
+    case incompleteThinkingConfig(String)
 
     public var userMessage: String {
         switch self {
@@ -120,6 +125,8 @@ public enum ConfigurationError: Error, Sendable, Equatable {
             return "配置文件 JSON 格式不正确，请参考 config.schema.json 校验。"
         case .referencedProviderMissing(let id):
             return "工具引用的供应商 \"\(id)\" 不存在。"
+        case .incompleteThinkingConfig:
+            return "工具未配置思考模式所需的 model id，请到设置中补全。"
         }
     }
 }

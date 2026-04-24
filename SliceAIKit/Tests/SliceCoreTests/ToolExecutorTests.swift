@@ -321,8 +321,8 @@ final class ToolExecutorTests: XCTestCase {
         do {
             _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
             XCTFail("expected throw")
-        } catch SliceError.configuration {
-            // OK：byModel + thinkingEnabled=true + thinkingModelId=nil 必须抛配置错误
+        } catch SliceError.configuration(.incompleteThinkingConfig) {
+            // OK：byModel + thinkingEnabled=true + thinkingModelId=nil 必须抛专用配置错误
         }
     }
 
