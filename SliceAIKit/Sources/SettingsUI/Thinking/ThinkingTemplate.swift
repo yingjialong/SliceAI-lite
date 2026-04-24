@@ -1,6 +1,5 @@
 // SliceAIKit/Sources/SettingsUI/Thinking/ThinkingTemplate.swift
 import Foundation
-import SliceCore
 
 /// Provider 配置 UI 提供的 byParameter 模板库
 ///
