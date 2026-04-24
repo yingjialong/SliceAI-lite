@@ -155,7 +155,14 @@ public struct ToolEditorView: View {
 
     // MARK: - Provider 卡片
 
-    /// Provider 分组：关联 Provider / 模型覆写 / 采样温度
+    /// 当前 Tool 关联的 Provider；用于判断是否显示 thinkingModelId 字段
+    ///
+    /// 在 providers 列表中按 tool.providerId 查找，找不到返回 nil。
+    private var currentProvider: Provider? {
+        providers.first { $0.id == tool.providerId }
+    }
+
+    /// Provider 分组：关联 Provider / 模型覆写 / Thinking model id（仅 byModel）/ 采样温度
     private var providerCard: some View {
         SectionCard("Provider") {
             // Provider Picker
@@ -188,6 +195,30 @@ public struct ToolEditorView: View {
                 .multilineTextAlignment(.trailing)
                 .foregroundColor(SliceColor.textPrimary)
                 .font(SliceFont.body)
+            }
+
+            // Thinking 模式 model id（仅 byModel Provider 显示）
+            //
+            // 当关联 Provider 的 thinking == .byModel 时，需要在 Tool 层单独配置
+            // thinking 开启时切换到的 model id（如 deepseek-reasoner）。
+            // 空字符串映射为 nil，避免存入无意义的空字符串。
+            if currentProvider?.thinking == .byModel {
+                SettingsRow("Thinking model id") {
+                    TextField(
+                        "如 deepseek-reasoner",
+                        text: Binding(
+                            get: { tool.thinkingModelId ?? "" },
+                            set: { newValue in
+                                tool.thinkingModelId = newValue.isEmpty ? nil : newValue
+                                print("[ToolEditorView] thinkingModelId -> \(String(describing: tool.thinkingModelId))")
+                            }
+                        )
+                    )
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundColor(SliceColor.textPrimary)
+                    .font(SliceFont.body)
+                }
             }
 
             // 采样温度 Slider
