@@ -87,6 +87,8 @@ struct ProviderThinkingSectionView: View {
             .labelsHidden()
             .onChange(of: template) { _, newTemplate in
                 // 切换模板时自动填充 JSON 文本框（custom 模板不覆盖用户已输入内容）
+                // 反向不自动同步：用户手动编辑 JSON 后，template picker 仍显示原模板，
+                // 不自动跳到 .custom——避免每次按键触发 picker 闪烁，符合 spec §5.1 设计
                 if newTemplate != .custom {
                     enableJSON = newTemplate.enableBodyJSON
                     disableJSON = newTemplate.disableBodyJSON ?? ""
@@ -149,11 +151,11 @@ struct ProviderThinkingSectionView: View {
                 .font(SliceFont.caption)
                 .foregroundColor(SliceColor.textSecondary)
 
-            // JSON 输入框：等宽字体 + 圆角边框（校验错误时变红）
+            // JSON 输入框：等宽字体（DesignSystem token）+ 圆角边框（校验错误时变红）
             TextEditor(text: text)
                 .textEditorStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .font(.system(.body, design: .monospaced))
+                .font(SliceFont.mono)
                 .foregroundColor(SliceColor.textPrimary)
                 .frame(minHeight: 80, maxHeight: 80)
                 .padding(SliceSpacing.sm)
