@@ -65,12 +65,18 @@ public final class ResultPanel {
     ///     `{ streamTask.cancel() }` 让 AppDelegate 取消正在跑的 LLM 请求
     ///   - onRegenerate: 用户点击"重新生成"按钮时的回调；调用方需传入重新触发
     ///     本次 tool + payload 的 closure；nil 时按钮仍显示但点击无效果
+    ///   - showThinkingToggle: 是否显示思考切换按钮（仅当 Provider.thinking 非 nil 时为 true）
+    ///   - thinkingEnabled: 当前工具的 thinking 开关状态（与 tool.thinkingEnabled 同步）
+    ///   - onToggleThinking: 用户点击 thinking 切换按钮时的回调；nil 时按钮隐藏
     public func open(
         toolName: String,
         model: String,
         anchor: CGPoint,
         onDismiss: (@MainActor () -> Void)? = nil,
-        onRegenerate: (@MainActor () -> Void)? = nil
+        onRegenerate: (@MainActor () -> Void)? = nil,
+        showThinkingToggle: Bool = false,
+        thinkingEnabled: Bool = false,
+        onToggleThinking: (@MainActor () -> Void)? = nil
     ) {
         // 缓存 dismiss 回调；下次 open 时会被覆盖（旧 task 应在那之前自然结束）
         self.onDismiss = onDismiss
@@ -112,15 +118,21 @@ public final class ResultPanel {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(viewModel.text, forType: .string)
         }
+        // 绑定 thinking toggle 状态与回调；reset() 已清空 accumulatedReasoning / reasoningExpanded
+        viewModel.showThinkingToggle = showThinkingToggle
+        viewModel.thinkingEnabled = thinkingEnabled
+        viewModel.onToggleThinking = onToggleThinking
         panel?.makeKeyAndOrderFront(nil)
         // 应用 pin 状态：设置 level + 装/卸 outside-click monitor
         applyPinState()
     }
 
-    /// 追加一段流式 delta 到结果区
-    /// - Parameter delta: 本次 SSE 片段的纯文本内容
-    public func append(_ delta: String) {
-        viewModel.append(delta)
+    /// 追加一段流式 ChatChunk 到结果区；同时处理正文 delta 与 reasoning delta
+    ///
+    /// - Parameter chunk: SSE 流式片段，包含 delta（正文增量）和 reasoningDelta（推理增量）
+    /// - Note: 对不支持 thinking 的模型，chunk.reasoningDelta 始终为 nil，不影响正常流程
+    public func append(_ chunk: SliceCore.ChatChunk) {
+        viewModel.append(delta: chunk.delta, reasoningDelta: chunk.reasoningDelta)
     }
 
     /// 标记流式输出正常结束（关闭闪烁光标）
@@ -306,6 +318,14 @@ final class ResultViewModel: ObservableObject {
     @Published var errorDetail: String?
     /// 是否钉住；同步自 ResultPanel.isPinned，用于切换 pin 按钮的图标
     @Published var isPinned: Bool = false
+    /// 是否显示 thinking 切换按钮；仅当 Provider.thinking 非 nil 时为 true
+    @Published var showThinkingToggle: Bool = false
+    /// 当前 thinking 开关状态；与 tool.thinkingEnabled 同步
+    @Published var thinkingEnabled: Bool = false
+    /// 流式累积的 reasoning 文本（来自 chunk.reasoningDelta）
+    @Published var accumulatedReasoning: String = ""
+    /// reasoning DisclosureGroup 展开状态；每次 open 时重置为折叠
+    @Published var reasoningExpanded: Bool = false
 
     // MARK: - 动作回调
 
@@ -321,6 +341,8 @@ final class ResultViewModel: ObservableObject {
     var onCopy: (@MainActor () -> Void)?
     /// "重新生成"回调；由调用方（AppDelegate）提供，重新触发同一 tool + payload
     var onRegenerate: (@MainActor () -> Void)?
+    /// "切换思考模式"回调；由调用方（AppDelegate）提供；nil 时按钮不显示
+    var onToggleThinking: (@MainActor () -> Void)?
 
     // MARK: - 状态切换方法
 
@@ -347,17 +369,30 @@ final class ResultViewModel: ObservableObject {
         // 复制与重新生成也清空，由 open() 重新绑定
         self.onCopy = nil
         self.onRegenerate = nil
+        // thinking 相关：清空 reasoning 文本，折叠 DisclosureGroup
+        // showThinkingToggle / thinkingEnabled / onToggleThinking 由 open() 重新绑定
+        self.accumulatedReasoning = ""
+        self.reasoningExpanded = false
     }
 
-    /// 拼接一段流式 delta 到现有文本
+    /// 拼接一段流式 delta 到现有文本，并可选累积 reasoning 内容
     ///
     /// 首次调用（thinking → streaming）时自动切换状态，让 UI 从加载态切至渲染态。
-    func append(_ delta: String) {
+    /// reasoning delta 来自 ChatChunk.reasoningDelta，仅在非 nil 时才累积到 accumulatedReasoning。
+    func append(delta: String, reasoningDelta: String? = nil) {
         // 收到首字节时从 thinking 切到 streaming
-        if streamingState == .thinking {
+        // 注意：仅有 reasoning delta 而 delta="" 时同样切换状态（reasoning 先于正文到达）
+        let hasContent = !delta.isEmpty || reasoningDelta != nil
+        if streamingState == .thinking, hasContent {
             streamingState = .streaming
         }
-        text += delta
+        if !delta.isEmpty {
+            text += delta
+        }
+        // 累积 reasoning 文本；非思考模型此字段始终为 nil，不影响正常流程
+        if let reasoning = reasoningDelta {
+            accumulatedReasoning += reasoning
+        }
     }
 
     /// 标记流正常结束，隐藏 ProgressStripe 和闪烁光标

@@ -333,16 +333,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             do {
                 let stream = try await self.container.toolExecutor.execute(tool: tool, payload: payload)
+                // 传递完整 ChatChunk（含 reasoningDelta），由 ResultPanel.append 分发到正文和推理区
                 for try await chunk in stream {
-                    self.container.resultPanel.append(chunk.delta)
+                    self.container.resultPanel.append(chunk)
                 }
                 self.container.resultPanel.finish()
             } catch {
                 self.handleStreamError(error, tool: tool, payload: payload)
             }
         }
-        // open panel：anchor = 选区屏幕坐标；onDismiss 捕获 streamTask 引用以便 cancel stream；
-        // onRegenerate：先 cancel 旧 stream，再重新 execute 同一 tool + payload
+        let showToggle = shouldShowThinkingToggle(for: tool)
+        Self.log.info("execute: tool=\(tool.name, privacy: .public) showToggle=\(showToggle, privacy: .public)")
+        // open panel：onDismiss 捕获 streamTask，onToggleThinking 持久化后用最新 tool 重执行
         container.resultPanel.open(
             toolName: tool.name,
             model: tool.modelId ?? "default",
@@ -352,8 +354,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 streamTask.cancel()
                 Self.log.info("onRegenerate: re-running tool=\(tool.name, privacy: .public)")
                 self?.execute(tool: tool, payload: payload)
-            }
+            },
+            showThinkingToggle: showToggle,
+            thinkingEnabled: tool.thinkingEnabled,
+            onToggleThinking: makeToggleThinkingAction(for: tool, payload: payload)
         )
+    }
+
+    /// thinking 切换按钮显隐逻辑：provider.thinking 非 nil，且 byModel 时 tool 有 thinkingModelId
+    ///
+    /// 使用 settingsViewModel.configuration（@MainActor @Published）同步读取，无需 await。
+    private func shouldShowThinkingToggle(for tool: SliceCore.Tool) -> Bool {
+        let provider = container.settingsViewModel.configuration.providers
+            .first(where: { $0.id == tool.providerId })
+        guard let thinking = provider?.thinking else { return false }
+        switch thinking {
+        case .byModel:
+            return tool.thinkingModelId != nil
+        case .byParameter:
+            return true
+        }
+    }
+
+    /// 构造 thinking 切换 closure：持久化后用最新 tool 快照重新执行，避免 stale 捕获
+    private func makeToggleThinkingAction(
+        for tool: SliceCore.Tool,
+        payload: SelectionPayload
+    ) -> (@MainActor () -> Void) {
+        { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.container.settingsViewModel.toggleThinking(for: tool.id)
+                // tool 变量已 stale，需从最新 configuration 取更新后的快照
+                guard let fresh = self.container.settingsViewModel.configuration.tools
+                    .first(where: { $0.id == tool.id }) else { return }
+                let tName = fresh.name
+                let tEnabled = fresh.thinkingEnabled
+                // swiftlint:disable:next line_length
+                Self.log.info("onToggleThinking: re-run tool=\(tName, privacy: .public) enabled=\(tEnabled, privacy: .public)")
+                self.execute(tool: fresh, payload: payload)
+            }
+        }
     }
 
     /// 统一处理 stream task 的错误：取消错误静默退出，其他错误映射到 SliceError 展示给用户
