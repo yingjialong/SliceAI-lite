@@ -46,10 +46,7 @@ struct ProviderThinkingSectionView: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .onChange(of: thinkingMode) { _, _ in
-                    print("[ProviderThinkingSectionView] thinkingMode -> \(thinkingMode.rawValue)")
-                    commitThinking()
-                }
+                .onChange(of: thinkingMode) { _, _ in commitThinking() }
             }
 
             // byParameter 模式：模板选择 + JSON 编辑区
@@ -96,7 +93,6 @@ struct ProviderThinkingSectionView: View {
                     enableJSONError = validateJSON(enableJSON)
                     disableJSONError = disableJSON.isEmpty ? nil : validateJSON(disableJSON)
                 }
-                print("[ProviderThinkingSectionView] template -> \(newTemplate.rawValue)")
                 commitThinking()
             }
         }
@@ -221,22 +217,15 @@ struct ProviderThinkingSectionView: View {
             // 切换 model id 模式：仅声明机制，具体 thinkingModelId 在 Tool 层配置
             newCapability = .byModel
         case .byParameter:
-            // 参数透传：两个 JSON 均合法才写回
-            if enableJSONError != nil {
-                print("[ProviderThinkingSectionView] commitThinking: enableJSON invalid, skip")
-                return
-            }
-            if !disableJSON.isEmpty && disableJSONError != nil {
-                print("[ProviderThinkingSectionView] commitThinking: disableJSON invalid, skip")
-                return
-            }
+            // 参数透传：两个 JSON 均合法才写回；非法时静默 return，保留上次合法值
+            if enableJSONError != nil { return }
+            if !disableJSON.isEmpty && disableJSONError != nil { return }
             newCapability = .byParameter(
                 enableBodyJSON: enableJSON,
                 disableBodyJSON: disableJSON.isEmpty ? nil : disableJSON
             )
         }
         provider.thinking = newCapability
-        print("[ProviderThinkingSectionView] commitThinking: \(String(describing: newCapability)) for '\(provider.id)'")
     }
 
     /// 视图出现时从 provider.thinking 反推 UI 状态
@@ -258,8 +247,6 @@ struct ProviderThinkingSectionView: View {
             enableJSONError = validateJSON(enableJSON)
             disableJSONError = disableJSON.isEmpty ? nil : validateJSON(disableJSON)
         }
-        print("[ProviderThinkingSectionView] loadThinkingFromProvider:",
-              "mode=\(thinkingMode.rawValue) provider='\(provider.id)'")
     }
 }
 
