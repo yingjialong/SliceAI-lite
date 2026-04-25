@@ -46,7 +46,17 @@ struct ProviderThinkingSectionView: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
-                .onChange(of: thinkingMode) { _, _ in commitThinking() }
+                .onChange(of: thinkingMode) { _, newMode in
+                    // 切到参数透传时若 JSON 还空，自动用当前 template（默认 OpenRouter）填充，
+                    // 避免直接 commit 写出非法的 byParameter("", nil)
+                    if newMode == .byParameter && enableJSON.isEmpty {
+                        enableJSON = template.enableBodyJSON
+                        disableJSON = template.disableBodyJSON ?? ""
+                        enableJSONError = validateJSON(enableJSON)
+                        disableJSONError = disableJSON.isEmpty ? nil : validateJSON(disableJSON)
+                    }
+                    commitThinking()
+                }
             }
 
             // byParameter 模式：模板选择 + JSON 编辑区
@@ -223,9 +233,10 @@ struct ProviderThinkingSectionView: View {
             // 切换 model id 模式：仅声明机制，具体 thinkingModelId 在 Tool 层配置
             newCapability = .byModel
         case .byParameter:
-            // 参数透传：两个 JSON 均合法才写回；非法时静默 return，保留上次合法值
-            if enableJSONError != nil { return }
-            if !disableJSON.isEmpty && disableJSONError != nil { return }
+            // 参数透传：commit 时主动 re-validate（不依赖 stale @State error，
+            // 避免初次切到 byParameter 时 enableJSONError 还是 nil 的窗口期）
+            if validateJSON(enableJSON) != nil { return }
+            if !disableJSON.isEmpty && validateJSON(disableJSON) != nil { return }
             newCapability = .byParameter(
                 enableBodyJSON: enableJSON,
                 disableBodyJSON: disableJSON.isEmpty ? nil : disableJSON
