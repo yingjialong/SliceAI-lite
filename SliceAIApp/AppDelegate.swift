@@ -57,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 当前打开的 Onboarding 窗口；完成或跳过后置 nil
     private var onboardingWindow: NSWindow?
 
+    /// thinking toggle 进行中标志：防御快速连点 toggle 派出多个并发 task
+    /// 上一个 toggle action 完整跑完前忽略新点击；@MainActor 隔离保证无 race
+    private var thinkingToggleInFlight: Bool = false
+
     /// 构造：创建并持有 AppContainer；其余子系统在 didFinishLaunching 中装配
     override init() {
         self.container = AppContainer()
@@ -400,6 +404,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
+                // 防止快速连点：上一个 toggle 完整跑完前忽略后续点击。
+                // generation counter 已经能阻止旧 stream 污染内容，这里追加防御主要是
+                // 避免无意义地派多个 streamTask + open() 闪烁
+                guard !self.thinkingToggleInFlight else { return }
+                self.thinkingToggleInFlight = true
+                defer { self.thinkingToggleInFlight = false }
                 cancelStream()
                 await self.container.settingsViewModel.toggleThinking(for: tool.id)
                 guard let fresh = self.container.settingsViewModel.configuration.tools
