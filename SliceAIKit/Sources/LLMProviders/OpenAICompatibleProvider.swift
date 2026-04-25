@@ -59,10 +59,16 @@ public struct OpenAICompatibleProvider: LLMProvider {
         httpReq.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         httpReq.timeoutInterval = 30
 
-        // 追加 stream: true，保持其它字段由 ChatRequest 编码产出
+        // 追加 stream: true 与 extraBody（thinking 模式参数）；其余字段由 ChatRequest 编码产出
         var body = try JSONEncoder().encode(request)
         if var dict = try JSONSerialization.jsonObject(with: body) as? [String: Any] {
             dict["stream"] = true
+            // 防御性 merge：extraBody 不覆盖现有字段（防止用户在模板里写 model 误改）
+            if let extra = request.extraBody {
+                for (key, value) in extra where dict[key] == nil {
+                    dict[key] = value
+                }
+            }
             body = try JSONSerialization.data(withJSONObject: dict)
         }
         httpReq.httpBody = body
@@ -197,11 +203,15 @@ public struct OpenAICompatibleProvider: LLMProvider {
         } catch {
             throw SliceError.provider(.sseParseError("decode failed"))
         }
-        let delta = parsed.choices.first?.delta.content ?? ""
+        let firstDelta = parsed.choices.first?.delta
+        let delta = firstDelta?.content ?? ""
+        // Reasoning fallback chain: OpenRouter (delta.reasoning) → DeepSeek (delta.reasoning_content) → nil
+        // 不绑定特定 vendor 模板，任何支持这两种字段的供应商都自动 work
+        let reasoningDelta = firstDelta?.reasoning ?? firstDelta?.reasoningContent
         let reason = parsed.choices.first?.finishReason.flatMap(FinishReason.init(rawValue:))
-        // 空 delta 且无 finishReason 的 chunk 无意义，过滤
-        if delta.isEmpty && reason == nil { return nil }
-        return ChatChunk(delta: delta, finishReason: reason)
+        // 主内容为空、reasoning 也为空、且无 finishReason 的 chunk 无意义，过滤（防止 keep-alive 空帧透传到 UI）
+        if delta.isEmpty && (reasoningDelta?.isEmpty ?? true) && reason == nil { return nil }
+        return ChatChunk(delta: delta, reasoningDelta: reasoningDelta, finishReason: reason)
     }
 
     /// 将 DecodingError 概括为一个简短字符串，避免把响应体 / 用户数据带进错误里

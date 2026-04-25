@@ -70,6 +70,9 @@ public struct ProviderEditorView: View {
 
             // API Key 分组：输入 + 保存/测试按钮 + 状态消息
             apiKeyCard
+
+            // Thinking 切换分组（抽取为独立子视图以遵守 SwiftLint 行长度限制）
+            ProviderThinkingSectionView(provider: $provider)
         }
         .task {
             // 视图首次出现时同步 Base URL 字符串态

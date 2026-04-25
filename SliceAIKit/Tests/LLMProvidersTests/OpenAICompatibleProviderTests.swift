@@ -237,4 +237,159 @@ final class OpenAICompatibleProviderTests: XCTestCase {
         for try await _ in try await provider.stream(request: ChatRequest(model: "x", messages: [])) {}
         XCTAssertEqual(cap.auth, "Bearer sk-123")
     }
+
+    // MARK: - extraBody merge
+
+    /// extraBody 字典在 buildURLRequest 时正确 merge 到 root body
+    func test_extraBody_mergedToRootBody() async throws {
+        let extra: [String: Any] = ["thinking": ["type": "enabled"]]
+        let request = ChatRequest(
+            model: "test-model",
+            messages: [ChatMessage(role: .user, content: "hi")],
+            extraBody: extra
+        )
+        final class BodyCapture: @unchecked Sendable { var data: Data? }
+        let capture = BodyCapture()
+        MockURLProtocol.requestHandler = { req in
+            // URLSession 内部会把 httpBody 转成 httpBodyStream 传给 URLProtocol，需从 stream 读取
+            capture.data = Self.readBodyData(from: req)
+            // swiftlint:disable:next force_unwrapping
+            let response = HTTPURLResponse(url: req.url!, statusCode: 200,
+                                           httpVersion: nil, headerFields: nil)!
+            return (response, "data: [DONE]\n\n".data(using: .utf8)!)
+        }
+        let provider = makeProvider()
+        let stream = try await provider.stream(request: request)
+        for try await _ in stream { }  // 耗尽流
+
+        let capturedBody = try XCTUnwrap(capture.data, "应有请求 body 被捕获")
+        let bodyDict = try JSONSerialization.jsonObject(with: capturedBody) as? [String: Any]
+        let thinking = bodyDict?["thinking"] as? [String: Any]
+        XCTAssertEqual(thinking?["type"] as? String, "enabled",
+                       "extraBody 中的 thinking 字段应 merge 进 root body")
+        // 校验 stream 字段仍然存在
+        XCTAssertEqual(bodyDict?["stream"] as? Bool, true, "stream 字段必须为 true")
+    }
+
+    /// extraBody 不应覆盖 ChatRequest 的现有字段（防御性 merge）
+    func test_extraBody_doesNotOverrideExistingFields() async throws {
+        let request = ChatRequest(
+            model: "real-model",
+            messages: [ChatMessage(role: .user, content: "hi")],
+            extraBody: ["model": "evil-model"]  // 尝试覆盖 model 字段
+        )
+        final class BodyCapture: @unchecked Sendable { var data: Data? }
+        let capture = BodyCapture()
+        MockURLProtocol.requestHandler = { req in
+            // URLSession 内部会把 httpBody 转成 httpBodyStream 传给 URLProtocol，需从 stream 读取
+            capture.data = Self.readBodyData(from: req)
+            // swiftlint:disable:next force_unwrapping
+            let response = HTTPURLResponse(url: req.url!, statusCode: 200,
+                                           httpVersion: nil, headerFields: nil)!
+            return (response, "data: [DONE]\n\n".data(using: .utf8)!)
+        }
+        let provider = makeProvider()
+        let stream = try await provider.stream(request: request)
+        for try await _ in stream { }
+
+        let capturedBody = try XCTUnwrap(capture.data, "应有请求 body 被捕获")
+        let bodyDict = try JSONSerialization.jsonObject(with: capturedBody) as? [String: Any]
+        XCTAssertEqual(bodyDict?["model"] as? String, "real-model",
+                       "extraBody 中的 model 字段不应覆盖 ChatRequest 原有的 model")
+    }
+
+    // MARK: - Reasoning extraction（fallback chain）
+
+    /// OpenRouter 风格的 SSE chunk: chunk.reasoningDelta 应来自 delta.reasoning
+    func test_chunk_reasoning_extractsFromOpenRouterField() async throws {
+        let fixture = try loadFixture("sse-openrouter-reasoning.txt")
+        MockURLProtocol.requestHandler = { req in
+            // swiftlint:disable:next force_unwrapping
+            let response = HTTPURLResponse(url: req.url!, statusCode: 200,
+                                           httpVersion: nil, headerFields: nil)!
+            return (response, fixture)
+        }
+        let provider = makeProvider()
+        let stream = try await provider.stream(request: makeRequest())
+        var reasonings: [String] = []
+        var deltas: [String] = []
+        for try await chunk in stream {
+            if let reasoning = chunk.reasoningDelta { reasonings.append(reasoning) }
+            if !chunk.delta.isEmpty { deltas.append(chunk.delta) }
+        }
+        XCTAssertEqual(reasonings, ["Let me think...", " the answer is 42"],
+                       "OpenRouter delta.reasoning 字段应被提取为 reasoningDelta")
+        XCTAssertEqual(deltas, ["42"], "普通 delta content 应正常透传")
+    }
+
+    /// DeepSeek 风格的 SSE chunk: chunk.reasoningDelta 应来自 delta.reasoning_content
+    func test_chunk_reasoning_extractsFromDeepSeekField() async throws {
+        let fixture = try loadFixture("sse-deepseek-reasoning-content.txt")
+        MockURLProtocol.requestHandler = { req in
+            // swiftlint:disable:next force_unwrapping
+            let response = HTTPURLResponse(url: req.url!, statusCode: 200,
+                                           httpVersion: nil, headerFields: nil)!
+            return (response, fixture)
+        }
+        let provider = makeProvider()
+        let stream = try await provider.stream(request: makeRequest())
+        var reasonings: [String] = []
+        var deltas: [String] = []
+        for try await chunk in stream {
+            if let reasoning = chunk.reasoningDelta { reasonings.append(reasoning) }
+            if !chunk.delta.isEmpty { deltas.append(chunk.delta) }
+        }
+        XCTAssertEqual(reasonings, ["Analyzing the input...", " computing result."],
+                       "DeepSeek delta.reasoning_content 字段应被提取为 reasoningDelta")
+        XCTAssertEqual(deltas, ["Result: 42"], "普通 delta content 应正常透传")
+    }
+
+    // MARK: - Helpers
+
+    /// 从 Bundle.module/Fixtures 目录加载测试 fixture 文件
+    /// - Parameter name: 文件名（含扩展名）
+    /// - Returns: 文件内容 Data
+    private func loadFixture(_ name: String) throws -> Data {
+        // swiftlint:disable:next force_unwrapping
+        let url = Bundle.module.url(forResource: name, withExtension: nil,
+                                    subdirectory: "Fixtures")!  // fixture 文件必须存在，否则是测试配置错误
+        return try Data(contentsOf: url)
+    }
+
+    /// 从 URLRequest 中读取 body 数据
+    /// URLSession 内部会把 httpBody 转成 httpBodyStream 传给 URLProtocol；
+    /// 因此必须同时检查 httpBody 与 httpBodyStream 两个属性
+    /// - Parameter req: URLProtocol 收到的 URLRequest
+    /// - Returns: body 的 Data，若两者均为 nil 则返回 nil
+    private static func readBodyData(from req: URLRequest) -> Data? {
+        // 优先检查 httpBody（测试环境下通常为 nil，body 被转为 stream）
+        if let body = req.httpBody { return body }
+        // 从 httpBodyStream 读取（URLSession 传给 URLProtocol 的实际路径）
+        guard let stream = req.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 4096
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: bufferSize)
+            if read <= 0 { break }
+            data.append(contentsOf: buffer[..<read])
+        }
+        return data
+    }
+
+    /// 构造使用 MockURLProtocol 的 Provider 实例
+    private func makeProvider() -> OpenAICompatibleProvider {
+        OpenAICompatibleProvider(
+            baseURL: URL(string: "https://api.test.local/v1")!,  // swiftlint:disable:this force_unwrapping
+            apiKey: "test-key",
+            session: URLSession.mocked()
+        )
+    }
+
+    /// 构造最小 ChatRequest 用于测试
+    private func makeRequest() -> ChatRequest {
+        ChatRequest(model: "m", messages: [ChatMessage(role: .user, content: "hi")])
+    }
 }

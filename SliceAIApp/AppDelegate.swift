@@ -29,7 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 默认级别为 `.info`，Console.app 需要在菜单栏开启 "Action → Include Info
     /// Messages"；命令行可用：
     /// `log stream --predicate 'subsystem == "com.sliceai.lite"' --level info`
-    private static let log = Logger(subsystem: "com.sliceai.lite", category: "AppDelegate")
+    /// 默认 internal 访问级别（不加 private）：让 `AppDelegate+Thinking` extension 跨文件访问
+    static let log = Logger(subsystem: "com.sliceai.lite", category: "AppDelegate")
 
     /// 应用的 DI 组合根，生命周期与 AppDelegate 相同
     let container: AppContainer
@@ -56,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 当前打开的 Onboarding 窗口；完成或跳过后置 nil
     private var onboardingWindow: NSWindow?
+
+    /// thinking toggle 进行中标志：防御快速连点 toggle 派出多个并发 task
+    /// 上一个 toggle action 完整跑完前忽略新点击；@MainActor 隔离保证无 race
+    /// internal（不写 private）：让 AppDelegate+Thinking extension 跨文件访问
+    var thinkingToggleInFlight: Bool = false
 
     /// 构造：创建并持有 AppContainer；其余子系统在 didFinishLaunching 中装配
     override init() {
@@ -331,18 +337,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func execute(tool: SliceCore.Tool, payload: SelectionPayload) {
         let streamTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            // 在 stream 创建前 snapshot 当前 generation；后续 toggle/regenerate 触发的新 open()
+            // 会让 panel.generation 递增，此处 hold 的 gen 失效，append/finish 被丢弃
+            // 这是协作式 cancel 的兜底：cancel 后 for-await 还会处理已 buffer 的 chunk，
+            // 必须靠 generation stamp 防止旧 stream 污染新 panel 内容
+            let gen = self.container.resultPanel.currentGeneration()
             do {
                 let stream = try await self.container.toolExecutor.execute(tool: tool, payload: payload)
+                // 传递完整 ChatChunk（含 reasoningDelta），由 ResultPanel.append 分发到正文和推理区
                 for try await chunk in stream {
-                    self.container.resultPanel.append(chunk.delta)
+                    self.container.resultPanel.append(chunk, generation: gen)
                 }
-                self.container.resultPanel.finish()
+                self.container.resultPanel.finish(generation: gen)
             } catch {
                 self.handleStreamError(error, tool: tool, payload: payload)
             }
         }
-        // open panel：anchor = 选区屏幕坐标；onDismiss 捕获 streamTask 引用以便 cancel stream；
-        // onRegenerate：先 cancel 旧 stream，再重新 execute 同一 tool + payload
+        let showToggle = shouldShowThinkingToggle(for: tool)
+        Self.log.info("execute: tool=\(tool.name, privacy: .public) showToggle=\(showToggle, privacy: .public)")
+        // open panel：onDismiss 捕获 streamTask，onToggleThinking 持久化后用最新 tool 重执行
         container.resultPanel.open(
             toolName: tool.name,
             model: tool.modelId ?? "default",
@@ -352,9 +365,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 streamTask.cancel()
                 Self.log.info("onRegenerate: re-running tool=\(tool.name, privacy: .public)")
                 self?.execute(tool: tool, payload: payload)
-            }
+            },
+            showThinkingToggle: showToggle,
+            thinkingEnabled: tool.thinkingEnabled,
+            onToggleThinking: makeToggleThinkingAction(
+                for: tool,
+                payload: payload,
+                cancelStream: { streamTask.cancel() }
+            )
         )
     }
+
+    // 注：shouldShowThinkingToggle / makeToggleThinkingAction 见 AppDelegate+Thinking.swift
+    // （拆出 extension 是为了把本文件压在 SwiftLint file_length 阈值 500 行之内；
+    // thinkingToggleInFlight 字段因 Swift 限制必须留在主类，见上方）
 
     /// 统一处理 stream task 的错误：取消错误静默退出，其他错误映射到 SliceError 展示给用户
     /// - Parameters:

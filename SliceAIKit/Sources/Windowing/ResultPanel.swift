@@ -15,8 +15,10 @@ import SwiftUI
 ///     anchor: payload.screenPoint,
 ///     onDismiss: { streamTask.cancel() }   // 用户主动关闭时取消 LLM 请求
 /// )
-/// panel.append("Hello")     // 每收到一段 delta 调一次
-/// panel.finish()            // 流结束
+/// let gen = panel.currentGeneration()      // stream 创建前 snapshot 当前代号
+/// // ...
+/// panel.append(chunk, generation: gen)     // 每收到一段 chunk 调一次（带 gen 防 race）
+/// panel.finish(generation: gen)            // 流结束（带 gen 防 race）
 /// // 出错时（带恢复动作）：
 /// // panel.fail(with: .provider(.unauthorized),
 /// //            onRetry: { ... }, onOpenSettings: { ... })
@@ -53,8 +55,21 @@ public final class ResultPanel {
     /// 是否钉住；跨 open() 保留，让用户钉过的窗口在新 tool 触发后仍保持钉住
     private var isPinned: Bool = false
 
+    /// 单调递增的 stream 代号；每次 `open()` +1
+    ///
+    /// 防御 race：Swift 结构化并发的 cancel 是协作式的——`streamTask.cancel()` 后
+    /// 旧 task 内 `for try await chunk in stream` 仍会处理至少一个已 buffer 的
+    /// chunk 才感知到 CancellationError。该窗口期内若 `execute(...)` 已重新 open
+    /// panel，旧 task 调用 `append/finish` 会污染新 panel 的内容。
+    /// 调用方在创建 streamTask 前读 `currentGeneration()`，每次 append/finish
+    /// 都把这个代号传回；不匹配静默丢弃。
+    private var generation: Int = 0
+
     /// 无状态构造器
     public init() {}
+
+    /// 当前 stream 代号；调用方在创建 streamTask 时读取作为 stamp
+    public func currentGeneration() -> Int { generation }
 
     /// 展示结果窗口
     /// - Parameters:
@@ -65,13 +80,21 @@ public final class ResultPanel {
     ///     `{ streamTask.cancel() }` 让 AppDelegate 取消正在跑的 LLM 请求
     ///   - onRegenerate: 用户点击"重新生成"按钮时的回调；调用方需传入重新触发
     ///     本次 tool + payload 的 closure；nil 时按钮仍显示但点击无效果
+    ///   - showThinkingToggle: 是否显示思考切换按钮（仅当 Provider.thinking 非 nil 时为 true）
+    ///   - thinkingEnabled: 当前工具的 thinking 开关状态（与 tool.thinkingEnabled 同步）
+    ///   - onToggleThinking: 用户点击 thinking 切换按钮时的回调；nil 时按钮隐藏
     public func open(
         toolName: String,
         model: String,
         anchor: CGPoint,
         onDismiss: (@MainActor () -> Void)? = nil,
-        onRegenerate: (@MainActor () -> Void)? = nil
+        onRegenerate: (@MainActor () -> Void)? = nil,
+        showThinkingToggle: Bool = false,
+        thinkingEnabled: Bool = false,
+        onToggleThinking: (@MainActor () -> Void)? = nil
     ) {
+        // 递增 generation：旧 streamTask 持有的旧 gen 现在已失效，后续 append/finish 调用会被丢弃
+        generation += 1
         // 缓存 dismiss 回调；下次 open 时会被覆盖（旧 task 应在那之前自然结束）
         self.onDismiss = onDismiss
 
@@ -112,19 +135,31 @@ public final class ResultPanel {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(viewModel.text, forType: .string)
         }
+        // 绑定 thinking toggle 状态与回调；reset() 已清空 accumulatedReasoning / reasoningExpanded
+        viewModel.showThinkingToggle = showThinkingToggle
+        viewModel.thinkingEnabled = thinkingEnabled
+        viewModel.onToggleThinking = onToggleThinking
         panel?.makeKeyAndOrderFront(nil)
         // 应用 pin 状态：设置 level + 装/卸 outside-click monitor
         applyPinState()
     }
 
-    /// 追加一段流式 delta 到结果区
-    /// - Parameter delta: 本次 SSE 片段的纯文本内容
-    public func append(_ delta: String) {
-        viewModel.append(delta)
+    /// 追加一段流式 ChatChunk 到结果区；同时处理正文 delta 与 reasoning delta
+    ///
+    /// - Parameters:
+    ///   - chunk: SSE 流式片段，包含 delta（正文增量）和 reasoningDelta（推理增量）
+    ///   - generation: 调用方创建 streamTask 时持有的代号；不匹配当前 generation
+    ///     说明这是已被 cancel 的旧 stream 残留 chunk，静默丢弃避免污染新 panel 内容
+    /// - Note: 对不支持 thinking 的模型，chunk.reasoningDelta 始终为 nil，不影响正常流程
+    public func append(_ chunk: SliceCore.ChatChunk, generation: Int) {
+        guard generation == self.generation else { return }
+        viewModel.append(delta: chunk.delta, reasoningDelta: chunk.reasoningDelta)
     }
 
     /// 标记流式输出正常结束（关闭闪烁光标）
-    public func finish() {
+    /// - Parameter generation: 调用方持有的代号；不匹配当前 generation 说明已被超越，丢弃 finish 信号
+    public func finish(generation: Int) {
+        guard generation == self.generation else { return }
         viewModel.finish()
     }
 
@@ -306,6 +341,14 @@ final class ResultViewModel: ObservableObject {
     @Published var errorDetail: String?
     /// 是否钉住；同步自 ResultPanel.isPinned，用于切换 pin 按钮的图标
     @Published var isPinned: Bool = false
+    /// 是否显示 thinking 切换按钮；仅当 Provider.thinking 非 nil 时为 true
+    @Published var showThinkingToggle: Bool = false
+    /// 当前 thinking 开关状态；与 tool.thinkingEnabled 同步
+    @Published var thinkingEnabled: Bool = false
+    /// 流式累积的 reasoning 文本（来自 chunk.reasoningDelta）
+    @Published var accumulatedReasoning: String = ""
+    /// reasoning DisclosureGroup 展开状态；每次 open 时重置为折叠
+    @Published var reasoningExpanded: Bool = false
 
     // MARK: - 动作回调
 
@@ -321,6 +364,8 @@ final class ResultViewModel: ObservableObject {
     var onCopy: (@MainActor () -> Void)?
     /// "重新生成"回调；由调用方（AppDelegate）提供，重新触发同一 tool + payload
     var onRegenerate: (@MainActor () -> Void)?
+    /// "切换思考模式"回调；由调用方（AppDelegate）提供；nil 时按钮不显示
+    var onToggleThinking: (@MainActor () -> Void)?
 
     // MARK: - 状态切换方法
 
@@ -347,17 +392,34 @@ final class ResultViewModel: ObservableObject {
         // 复制与重新生成也清空，由 open() 重新绑定
         self.onCopy = nil
         self.onRegenerate = nil
+        // thinking 相关：清空 reasoning 文本，折叠 DisclosureGroup
+        // showThinkingToggle / thinkingEnabled / onToggleThinking 由 open() 重新绑定
+        self.accumulatedReasoning = ""
+        self.reasoningExpanded = false
     }
 
-    /// 拼接一段流式 delta 到现有文本
+    /// 拼接一段流式 delta 到现有文本，并可选累积 reasoning 内容
     ///
     /// 首次调用（thinking → streaming）时自动切换状态，让 UI 从加载态切至渲染态。
-    func append(_ delta: String) {
-        // 收到首字节时从 thinking 切到 streaming
-        if streamingState == .thinking {
+    /// reasoning delta 来自 ChatChunk.reasoningDelta：
+    ///   - 当 thinkingEnabled == false 时**直接丢弃**——DeepSeek V4 即便收到 disable 模板
+    ///     仍可能回传 reasoning_content，UI 层尊重用户偏好不累积，避免反复 toggle
+    ///     时旧 reasoning 残留 / 内存膨胀
+    ///   - 状态切换条件相应只看正文 delta，避免 thinking off 时仅靠 reasoning 触发态切换
+    func append(delta: String, reasoningDelta: String? = nil) {
+        // 仅当 thinking 启用时，reasoning delta 才被视为有效内容
+        let effectiveReasoning: String? = thinkingEnabled ? reasoningDelta : nil
+        // 收到首字节时从 thinking 切到 streaming（reasoning 先于正文到达时也算）
+        let hasContent = !delta.isEmpty || effectiveReasoning != nil
+        if streamingState == .thinking, hasContent {
             streamingState = .streaming
         }
-        text += delta
+        if !delta.isEmpty {
+            text += delta
+        }
+        if let reasoning = effectiveReasoning {
+            accumulatedReasoning += reasoning
+        }
     }
 
     /// 标记流正常结束，隐藏 ProgressStripe 和闪烁光标

@@ -58,10 +58,14 @@ struct ResultContent: View {
 
         case .streaming, .finished:
             // 流式渲染：isStreaming = true 时 StreamingMarkdownView 会追加闪烁光标
-            StreamingMarkdownView(
-                text: viewModel.text,
-                isStreaming: viewModel.streamingState == .streaming
-            )
+            // 若有 reasoning 文本，先渲染折叠的"思考过程"，再渲染正文
+            VStack(alignment: .leading, spacing: 0) {
+                reasoningDisclosure
+                StreamingMarkdownView(
+                    text: viewModel.text,
+                    isStreaming: viewModel.streamingState == .streaming
+                )
+            }
 
         case .error:
             // 错误态：用 ErrorBlock 展示错误信息 + 可选重试/设置按钮
@@ -80,6 +84,43 @@ struct ResultContent: View {
                 )
                 .padding(SliceSpacing.xxl)
             }
+        }
+    }
+
+    /// 思考过程折叠区：仅当 thinking 已启用 + 有 reasoning 文本时渲染
+    ///
+    /// 双重守卫的原因：
+    ///   - `thinkingEnabled` 守卫：DeepSeek V4 即便收到 disable 模板（thinking.type=disabled）
+    ///     仍可能回传 reasoning_content 字段，UI 层尊重用户偏好直接不显示
+    ///   - `!isEmpty` 守卫：按需渲染，避免空 disclosure 占位
+    /// DisclosureGroup 绑定到 viewModel.reasoningExpanded，每次新流式任务由 reset() 折叠。
+    @ViewBuilder
+    private var reasoningDisclosure: some View {
+        if viewModel.thinkingEnabled && !viewModel.accumulatedReasoning.isEmpty {
+            DisclosureGroup(isExpanded: Binding(
+                get: { viewModel.reasoningExpanded },
+                set: { viewModel.reasoningExpanded = $0 }
+            )) {
+                ScrollView {
+                    Text(viewModel.accumulatedReasoning)
+                        .font(SliceFont.caption)
+                        .foregroundColor(SliceColor.textSecondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(SliceSpacing.sm)
+                }
+                .frame(maxHeight: 150)
+            } label: {
+                HStack {
+                    Text("思考过程")
+                        .font(SliceFont.captionEmphasis)
+                        .foregroundColor(SliceColor.textSecondary)
+                    Spacer()
+                }
+            }
+            .padding(.horizontal, SliceSpacing.xl)
+            .padding(.top, SliceSpacing.base)
+            .padding(.bottom, SliceSpacing.xs)
         }
     }
 
@@ -108,6 +149,19 @@ struct ResultContent: View {
             // 重新生成：cancel 旧 stream 并重新触发同一 tool + payload
             IconButton(systemName: "arrow.clockwise", size: .small, help: "重新生成") {
                 viewModel.onRegenerate?()
+            }
+            // thinking 切换：仅当 provider 支持 thinking 切换时显示（showThinkingToggle=true）
+            // 单图标 + isActive 控制亮/暗：thinking ON 时品牌色高亮，OFF 时与其他控件同灰度
+            // 不再做 brain.head.profile <-> brain 的两图标切换——视觉差异太弱、用户难以区分
+            if viewModel.showThinkingToggle {
+                IconButton(
+                    systemName: "brain",
+                    size: .small,
+                    isActive: viewModel.thinkingEnabled,
+                    help: viewModel.thinkingEnabled ? "切换为非思考模式" : "切换为思考模式"
+                ) {
+                    viewModel.onToggleThinking?()
+                }
             }
             // pin：切换 statusBar/floating level + outside-click 监视器
             IconButton(

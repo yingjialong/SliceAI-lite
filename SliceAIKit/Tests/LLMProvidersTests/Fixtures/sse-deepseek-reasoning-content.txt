@@ -1,0 +1,7 @@
+data: {"choices":[{"delta":{"reasoning_content":"Analyzing the input...","content":""}}]}
+
+data: {"choices":[{"delta":{"reasoning_content":" computing result.","content":""}}]}
+
+data: {"choices":[{"delta":{"content":"Result: 42"}}]}
+
+data: [DONE]

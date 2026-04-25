@@ -163,6 +163,29 @@ public final class SettingsViewModel: ObservableObject {
         return try await keychain.readAPIKey(providerId: account)
     }
 
+    /// 切换指定工具的 thinking 偏好并立即持久化
+    ///
+    /// 用于 ResultPanel 的 toggle 按钮回调：用户点击后立即写盘，
+    /// 下次该工具执行时按新偏好走。
+    /// IO 失败仅打日志（内存态已更新，下次启动 reload 以磁盘为准），
+    /// 与 saveTriggers / saveHotkeys 的处理风格一致。
+    /// - Parameter toolId: 要切换的工具 id
+    public func toggleThinking(for toolId: Tool.ID) async {
+        guard let idx = configuration.tools.firstIndex(where: { $0.id == toolId }) else { return }
+        configuration.tools[idx].thinkingEnabled.toggle()
+        // IO 失败静默吞错：内存态已 toggle，下次启动 reload 以磁盘为准；
+        // 调用方（AppDelegate）已经会触发 re-execute，用户能感知到行为变化
+        try? await store.update(configuration)
+    }
+
+    /// 将当前 configuration.tools 写回磁盘，供工具编辑页 onChange 立即持久化
+    ///
+    /// 与 saveTriggers / saveHotkeys 同构：调用方更新 configuration.tools 后调用此方法；
+    /// IO 失败静默（用户下次编辑会再次触发 save，不需要日志）
+    public func saveTools() async {
+        try? await store.update(configuration)
+    }
+
     /// 测试 Provider 配置是否可用
     ///
     /// 用传入的 `apiKey` / `baseURL` / `model` 临时构造一个 `OpenAICompatibleProvider`

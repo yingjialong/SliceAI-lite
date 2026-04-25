@@ -1,0 +1,7 @@
+data: {"choices":[{"delta":{"reasoning":"Let me think...","content":""}}]}
+
+data: {"choices":[{"delta":{"reasoning":" the answer is 42","content":""}}]}
+
+data: {"choices":[{"delta":{"content":"42"}}]}
+
+data: [DONE]

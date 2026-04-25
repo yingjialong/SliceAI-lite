@@ -15,9 +15,16 @@ import SwiftUI
 ///   - Provider 列表：每行显示首字母头像 + 名称 + 默认模型；点击展开编辑区
 ///   - 编辑区：ProviderEditorView 内嵌于 SectionCard；选另一行或空白处收起
 ///
-/// 持久化策略：ProviderEditorView 通过 @Binding 直接修改 configuration，
-/// 编辑收起时调用 viewModel.save() 写回磁盘。
+/// 持久化策略：通过 `.onChange(of: providers)` 驱动 debounced save——所有
+/// providers 变动（编辑 thinking / baseURL / model / 新增 / 删除）在用户停手
+/// `saveDebounceInterval` 后自动落盘。统一这一个入口避免分散在各处显式 save，
+/// 也修复了之前 ProviderEditor 内字段（含 thinking 配置）改了但完全不写盘的 bug——
+/// 那个 bug 让 ToolExecutor 后续读 configStore.current() 时永远拿到磁盘旧值。
 public struct ProvidersSettingsPage: View {
+
+    /// 写盘前的静默等待时长：用户连续编辑时避免频繁写盘
+    /// 与 ToolsSettingsPage 保持一致 600 ms
+    private static let saveDebounceInterval: UInt64 = 600_000_000
 
     /// 设置视图模型，用于读写 configuration.providers
     @ObservedObject private var viewModel: SettingsViewModel
@@ -27,6 +34,9 @@ public struct ProvidersSettingsPage: View {
 
     /// 待确认删除的 Provider id；非 nil 时弹出删除确认 alert
     @State private var pendingDeleteId: String?
+
+    /// debounced save 的当前 Task；新变动进来就 cancel 重排
+    @State private var saveDebounceTask: Task<Void, Never>?
 
     /// 构造 Providers 设置页
     /// - Parameter viewModel: 宿主注入的设置视图模型
@@ -59,6 +69,31 @@ public struct ProvidersSettingsPage: View {
             }
         } message: { provider in
             Text("确定要删除「\(provider.name)」吗？关联此 Provider 的工具将失效，请先在工具中改绑其他 Provider。")
+        }
+        // 核心持久化钩子：providers 数组本身变化（含 Provider 内部字段——Provider 是 Equatable struct）
+        // 都会触发 debounce save。这是 thinking 配置正确落盘的唯一保证：
+        // 修 ProviderEditor / ProviderThinkingSection 中任何字段后，停手 ~600ms 写盘，
+        // ToolExecutor 下一次 execute() 调 configStore.current() 时能拿到最新 Provider.thinking。
+        .onChange(of: viewModel.configuration.providers) { _, _ in
+            scheduleDebouncedSave()
+        }
+    }
+
+    /// 安排一次 debounced save（取消上一个挂起 Task 再启新）
+    ///
+    /// 这是 providers 持久化的唯一入口。仿照 ToolsSettingsPage 的统一保存模式，
+    /// 不再在 addProvider / performDelete 内显式 save。
+    private func scheduleDebouncedSave() {
+        saveDebounceTask?.cancel()
+        saveDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.saveDebounceInterval)
+            guard !Task.isCancelled else { return }
+            do {
+                try await viewModel.save()
+            } catch {
+                // 持久化失败仅在 Console 输出，避免阻塞 UI；用户重试即可触发新一轮 save
+                print("[ProvidersSettingsPage] debounced save failed – \(error.localizedDescription)")
+            }
         }
     }
 
@@ -209,39 +244,20 @@ public struct ProvidersSettingsPage: View {
             apiKeyRef: "keychain:\(newId)",
             defaultModel: "gpt-4o-mini"
         )
-        print("[ProvidersSettingsPage] addProvider: id=\(newId)")
         viewModel.configuration.providers.append(newProvider)
-        // 立即展开新 Provider 的编辑区
+        // 立即展开新 Provider 的编辑区；持久化由 .onChange(of: providers) 兜底
         withAnimation(SliceAnimation.standard) {
             expandedId = newId
         }
-        // 异步持久化
-        Task {
-            do {
-                try await viewModel.save()
-                print("[ProvidersSettingsPage] addProvider: saved OK")
-            } catch {
-                print("[ProvidersSettingsPage] addProvider: save failed – \(error.localizedDescription)")
-            }
-        }
     }
 
-    /// 实际执行删除（alert 确认后才调用）
+    /// 实际执行删除（alert 确认后才调用；save 由 onChange(providers) 兜底）
     private func performDelete(id: String) {
-        print("[ProvidersSettingsPage] performDelete: id=\(id)")
         withAnimation(SliceAnimation.standard) {
             viewModel.configuration.providers.removeAll { $0.id == id }
             // 若删的是当前展开项，收起
             if expandedId == id {
                 expandedId = nil
-            }
-        }
-        Task {
-            do {
-                try await viewModel.save()
-                print("[ProvidersSettingsPage] performDelete: saved OK")
-            } catch {
-                print("[ProvidersSettingsPage] performDelete: save failed – \(error.localizedDescription)")
             }
         }
     }

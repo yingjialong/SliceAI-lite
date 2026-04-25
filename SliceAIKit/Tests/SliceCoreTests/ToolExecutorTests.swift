@@ -75,6 +75,33 @@ private struct ThrowingStreamFactory: LLMProviderFactory {
     }
 }
 
+// MARK: - Thinking mode spy providers
+
+/// 能拦截 ChatRequest 的 spy provider，用于断言 ToolExecutor 的决策结果
+/// @unchecked Sendable：var captured 在测试单线程访问，不存在真正的并发竞争
+private final class ThinkingCapturingProvider: LLMProvider, @unchecked Sendable {
+    /// 记录最近一次 stream() 收到的 ChatRequest，用于断言
+    var captured: ChatRequest?
+
+    /// 流式返回空流，仅用于捕获请求
+    func stream(request: ChatRequest) async throws -> AsyncThrowingStream<ChatChunk, any Error> {
+        captured = request
+        return AsyncThrowingStream { $0.finish() }
+    }
+}
+
+/// 返回 ThinkingCapturingProvider 的工厂，供 thinking 相关测试使用
+/// @unchecked Sendable：同上，provider 属性仅在测试主线程访问
+private final class ThinkingCapturingFactory: LLMProviderFactory, @unchecked Sendable {
+    /// 共享的 spy provider 实例，测试读取 provider.captured 来断言
+    let provider = ThinkingCapturingProvider()
+
+    /// 始终返回同一个 spy provider，忽略 apiKey
+    func make(for: Provider, apiKey: String) throws -> any LLMProvider {
+        return provider
+    }
+}
+
 final class ToolExecutorTests: XCTestCase {
 
     /// 验证 execute 正常渲染 prompt 并正确转发流式 chunk
@@ -252,4 +279,227 @@ final class ToolExecutorTests: XCTestCase {
             XCTFail("unexpected: \(error)")
         }
     }
+
+    // MARK: - Thinking mode tests
+
+    /// byModel + thinkingEnabled=true 时应使用 thinkingModelId
+    func test_execute_byModel_thinkingEnabled_usesThinkingModelId() async throws {
+        let provider = Provider(id: "ds", name: "DeepSeek",
+                                baseURL: URL(string: "https://api")!, // swiftlint:disable:this force_unwrapping
+                                apiKeyRef: "keychain:ds",
+                                defaultModel: "deepseek-chat",
+                                thinking: .byModel)
+        let tool = Tool(id: "t", name: "T", icon: "x", description: nil,
+                        systemPrompt: nil, userPrompt: "{{selection}}",
+                        providerId: "ds", modelId: "deepseek-chat",
+                        temperature: nil, displayMode: .window, variables: [:],
+                        thinkingModelId: "deepseek-reasoner",
+                        thinkingEnabled: true)
+        let factory = ThinkingCapturingFactory()
+        let executor = makeThinkingExecutor(provider: provider, tool: tool, factory: factory)
+        _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
+        // 验证 ToolExecutor 切换到了 thinkingModelId
+        XCTAssertEqual(factory.provider.captured?.model, "deepseek-reasoner")
+        XCTAssertNil(factory.provider.captured?.extraBody)
+    }
+
+    /// byModel + thinkingEnabled=true 但 thinkingModelId=nil 时应抛配置错误
+    func test_execute_byModel_thinkingEnabled_noThinkingModelId_throws() async throws {
+        let provider = Provider(id: "ds", name: "DeepSeek",
+                                baseURL: URL(string: "https://api")!, // swiftlint:disable:this force_unwrapping
+                                apiKeyRef: "keychain:ds",
+                                defaultModel: "deepseek-chat",
+                                thinking: .byModel)
+        let tool = Tool(id: "t", name: "T", icon: "x", description: nil,
+                        systemPrompt: nil, userPrompt: "{{selection}}",
+                        providerId: "ds", modelId: "deepseek-chat",
+                        temperature: nil, displayMode: .window, variables: [:],
+                        thinkingModelId: nil,
+                        thinkingEnabled: true)
+        let executor = makeThinkingExecutor(provider: provider, tool: tool,
+                                            factory: ThinkingCapturingFactory())
+        do {
+            _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
+            XCTFail("expected throw")
+        } catch SliceError.configuration(.incompleteThinkingConfig) {
+            // OK：byModel + thinkingEnabled=true + thinkingModelId=nil 必须抛专用配置错误
+        }
+    }
+
+    /// byParameter + thinkingEnabled=true 时 extraBody 应为 enableBodyJSON 解析结果
+    func test_execute_byParameter_thinkingEnabled_setsExtraBody() async throws {
+        let provider = Provider(id: "or", name: "OpenRouter",
+                                baseURL: URL(string: "https://api")!, // swiftlint:disable:this force_unwrapping
+                                apiKeyRef: "keychain:or",
+                                defaultModel: "claude",
+                                thinking: .byParameter(
+                                    enableBodyJSON: #"{"reasoning":{"effort":"medium"}}"#,
+                                    disableBodyJSON: #"{"reasoning":{"effort":"none"}}"#
+                                ))
+        let tool = Tool(id: "t", name: "T", icon: "x", description: nil,
+                        systemPrompt: nil, userPrompt: "{{selection}}",
+                        providerId: "or", modelId: "claude",
+                        temperature: nil, displayMode: .window, variables: [:],
+                        thinkingEnabled: true)
+        let factory = ThinkingCapturingFactory()
+        let executor = makeThinkingExecutor(provider: provider, tool: tool, factory: factory)
+        _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
+        // 验证 extraBody 包含 "reasoning" 字段
+        let extra = factory.provider.captured?.extraBody as? [String: Any]
+        XCTAssertNotNil(extra?["reasoning"])
+    }
+
+    /// byParameter + thinkingEnabled=false + 有 disableBodyJSON 时也应 merge extraBody
+    func test_execute_byParameter_thinkingDisabled_withDisableBody_setsExtraBody() async throws {
+        let provider = Provider(id: "or", name: "OpenRouter",
+                                baseURL: URL(string: "https://api")!, // swiftlint:disable:this force_unwrapping
+                                apiKeyRef: "keychain:or",
+                                defaultModel: "claude",
+                                thinking: .byParameter(
+                                    enableBodyJSON: #"{"reasoning":{"effort":"medium"}}"#,
+                                    disableBodyJSON: #"{"reasoning":{"effort":"none"}}"#
+                                ))
+        let tool = Tool(id: "t", name: "T", icon: "x", description: nil,
+                        systemPrompt: nil, userPrompt: "{{selection}}",
+                        providerId: "or", modelId: "claude",
+                        temperature: nil, displayMode: .window, variables: [:],
+                        thinkingEnabled: false)
+        let factory = ThinkingCapturingFactory()
+        let executor = makeThinkingExecutor(provider: provider, tool: tool, factory: factory)
+        _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
+        // 有 disableBodyJSON 时，即使 thinkingEnabled=false 也应设置 extraBody
+        let extra = factory.provider.captured?.extraBody as? [String: Any]
+        XCTAssertNotNil(extra?["reasoning"])
+    }
+
+    /// byParameter + thinkingEnabled=false + 无 disableBodyJSON 时 extraBody 应为 nil
+    func test_execute_byParameter_thinkingDisabled_noDisableBody_extraBodyNil() async throws {
+        let provider = Provider(id: "an", name: "Anthropic",
+                                baseURL: URL(string: "https://api")!, // swiftlint:disable:this force_unwrapping
+                                apiKeyRef: "keychain:an",
+                                defaultModel: "claude-4.6",
+                                thinking: .byParameter(
+                                    enableBodyJSON: #"{"thinking":{"type":"adaptive"}}"#,
+                                    disableBodyJSON: nil
+                                ))
+        let tool = Tool(id: "t", name: "T", icon: "x", description: nil,
+                        systemPrompt: nil, userPrompt: "{{selection}}",
+                        providerId: "an", modelId: "claude-4.6",
+                        temperature: nil, displayMode: .window, variables: [:],
+                        thinkingEnabled: false)
+        let factory = ThinkingCapturingFactory()
+        let executor = makeThinkingExecutor(provider: provider, tool: tool, factory: factory)
+        _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
+        // disableBodyJSON=nil 时，不 merge extraBody，应为 nil
+        XCTAssertNil(factory.provider.captured?.extraBody)
+    }
+
+    /// byParameter 的 enableBodyJSON 不是合法 JSON 时应抛配置错误
+    func test_execute_byParameter_invalidEnableJSON_throws() async throws {
+        let provider = Provider(id: "x", name: "X",
+                                baseURL: URL(string: "https://api")!, // swiftlint:disable:this force_unwrapping
+                                apiKeyRef: "keychain:x",
+                                defaultModel: "m",
+                                thinking: .byParameter(
+                                    enableBodyJSON: "not valid json !!!",
+                                    disableBodyJSON: nil
+                                ))
+        let tool = Tool(id: "t", name: "T", icon: "x", description: nil,
+                        systemPrompt: nil, userPrompt: "{{selection}}",
+                        providerId: "x", modelId: "m",
+                        temperature: nil, displayMode: .window, variables: [:],
+                        thinkingEnabled: true)
+        let executor = makeThinkingExecutor(provider: provider, tool: tool,
+                                            factory: ThinkingCapturingFactory())
+        do {
+            _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
+            XCTFail("expected throw")
+        } catch SliceError.configuration {
+            // OK：无效 JSON 应抛配置错误
+        }
+    }
+
+    /// Provider.thinking == nil 时应忽略 thinkingEnabled，使用默认 modelId 且无 extraBody
+    func test_execute_providerThinkingNil_ignoresThinkingEnabled() async throws {
+        let provider = Provider(id: "old", name: "Old",
+                                baseURL: URL(string: "https://api")!, // swiftlint:disable:this force_unwrapping
+                                apiKeyRef: "keychain:old",
+                                defaultModel: "gpt-3.5",
+                                thinking: nil)
+        let tool = Tool(id: "t", name: "T", icon: "x", description: nil,
+                        systemPrompt: nil, userPrompt: "{{selection}}",
+                        providerId: "old", modelId: "gpt-3.5",
+                        temperature: nil, displayMode: .window, variables: [:],
+                        thinkingModelId: "gpt-4",
+                        thinkingEnabled: true)
+        let factory = ThinkingCapturingFactory()
+        let executor = makeThinkingExecutor(provider: provider, tool: tool, factory: factory)
+        _ = try await executor.execute(tool: tool, payload: makeThinkingPayload())
+        // provider.thinking=nil 时，忽略 thinkingEnabled，不切换 model 也不 merge extraBody
+        XCTAssertEqual(factory.provider.captured?.model, "gpt-3.5")
+        XCTAssertNil(factory.provider.captured?.extraBody)
+    }
+}
+
+// MARK: - Thinking test helpers
+
+/// 为 thinking 相关测试构造 ToolExecutor
+/// 使用 struct-based 轻量 fake，避免与现有 FakeConfig / FakeKeychain (actor) 混用
+private func makeThinkingExecutor(provider: Provider, tool: Tool,
+                                  factory: any LLMProviderFactory) -> ToolExecutor {
+    let cfg = Configuration(
+        schemaVersion: Configuration.currentSchemaVersion,
+        providers: [provider],
+        tools: [tool],
+        hotkeys: HotkeyBindings(toggleCommandPalette: "option+space"),
+        triggers: TriggerSettings(
+            floatingToolbarEnabled: true,
+            commandPaletteEnabled: true,
+            minimumSelectionLength: 1,
+            triggerDelayMs: 100
+        ),
+        telemetry: TelemetrySettings(enabled: false),
+        appBlocklist: []
+    )
+    return ToolExecutor(
+        configurationProvider: ImmediateConfigProvider(cfg: cfg),
+        providerFactory: factory,
+        keychain: AlwaysOKKeychain()
+    )
+}
+
+/// 立即返回固定 Configuration 的同步假实现（struct 无 actor 开销）
+private struct ImmediateConfigProvider: ConfigurationProviding {
+    let cfg: Configuration
+
+    /// 返回固定配置
+    func current() async -> Configuration { cfg }
+
+    /// 忽略更新请求
+    func update(_ configuration: Configuration) async throws {}
+}
+
+/// 始终返回固定 "test-key" 的假 Keychain 实现
+private struct AlwaysOKKeychain: KeychainAccessing {
+    /// 无论 providerId 是什么，返回固定的测试 key
+    func readAPIKey(providerId: String) async throws -> String? { "test-key" }
+
+    /// 忽略写入请求
+    func writeAPIKey(_ value: String, providerId: String) async throws {}
+
+    /// 忽略删除请求
+    func deleteAPIKey(providerId: String) async throws {}
+}
+
+/// 构造供 thinking 测试使用的最简 SelectionPayload
+private func makeThinkingPayload() -> SelectionPayload {
+    SelectionPayload(
+        text: "hi",
+        appBundleID: "test.app",
+        appName: "TestApp",
+        url: nil,
+        screenPoint: .zero,
+        source: .accessibility,
+        timestamp: Date()
+    )
 }

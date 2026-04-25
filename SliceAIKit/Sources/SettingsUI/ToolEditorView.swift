@@ -155,7 +155,14 @@ public struct ToolEditorView: View {
 
     // MARK: - Provider 卡片
 
-    /// Provider 分组：关联 Provider / 模型覆写 / 采样温度
+    /// 当前 Tool 关联的 Provider；用于判断是否显示 thinkingModelId 字段
+    ///
+    /// 在 providers 列表中按 tool.providerId 查找，找不到返回 nil。
+    private var currentProvider: Provider? {
+        providers.first { $0.id == tool.providerId }
+    }
+
+    /// Provider 分组：关联 Provider / 模型覆写 / Thinking model id（仅 byModel）/ 采样温度
     private var providerCard: some View {
         SectionCard("Provider") {
             // Provider Picker
@@ -189,6 +196,11 @@ public struct ToolEditorView: View {
                 .foregroundColor(SliceColor.textPrimary)
                 .font(SliceFont.body)
             }
+
+            // Thinking 模式：详见 ToolThinkingSection.swift
+            // 抽出独立 view 是为了把 ToolEditorView 主 struct 行数压在
+            // SwiftLint type_body_length 警告阈值（250 行）之内
+            ToolThinkingSection(tool: $tool, currentProvider: currentProvider)
 
             // 采样温度 Slider
             SettingsRow("Temperature") {

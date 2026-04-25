@@ -13,8 +13,14 @@ public struct Tool: Identifiable, Sendable, Codable, Equatable {
     public var temperature: Double?
     public var displayMode: DisplayMode
     public var variables: [String: String]
-    /// 浮条上的显示样式（图标 / 名称 / 图标+名称）；默认 `.icon`
+    /// 浮条（FloatingToolbar）上单个工具的显示样式
     public var labelStyle: ToolLabelStyle
+    /// 仅当所选 Provider.thinking == .byModel 时有意义；nil + thinkingEnabled=true
+    /// 时 ToolExecutor 会抛 SliceError.configuration
+    public var thinkingModelId: String?
+    /// 用户上次切换的 thinking 偏好；默认 false（非思考）
+    /// toggle 后立即持久化到 config.json
+    public var thinkingEnabled: Bool
 
     /// 构造工具定义
     /// - Parameters:
@@ -30,12 +36,16 @@ public struct Tool: Identifiable, Sendable, Codable, Equatable {
     ///   - displayMode: 结果展示模式
     ///   - variables: 用户自定义变量，渲染 prompt 时注入
     ///   - labelStyle: 浮条显示样式，默认 `.icon`
+    ///   - thinkingModelId: byModel 机制下 thinking=on 时使用的模型 id，nil = 不支持
+    ///   - thinkingEnabled: 用户当前 thinking 偏好，默认 false
     public init(
         id: String, name: String, icon: String, description: String?,
         systemPrompt: String?, userPrompt: String,
         providerId: String, modelId: String?, temperature: Double?,
         displayMode: DisplayMode, variables: [String: String],
-        labelStyle: ToolLabelStyle = .icon
+        labelStyle: ToolLabelStyle = .icon,
+        thinkingModelId: String? = nil,
+        thinkingEnabled: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -49,6 +59,8 @@ public struct Tool: Identifiable, Sendable, Codable, Equatable {
         self.displayMode = displayMode
         self.variables = variables
         self.labelStyle = labelStyle
+        self.thinkingModelId = thinkingModelId
+        self.thinkingEnabled = thinkingEnabled
     }
 
     // MARK: - Codable（自定义 decode 以兼容老版本 config.json）
@@ -57,12 +69,14 @@ public struct Tool: Identifiable, Sendable, Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, name, icon, description, systemPrompt, userPrompt
         case providerId, modelId, temperature, displayMode, variables, labelStyle
+        case thinkingModelId, thinkingEnabled
     }
 
     /// 自定义 decode：`labelStyle` 旧配置里不存在时回退到 `.icon`
     ///
-    /// 其余字段仍按合成 Codable 的语义处理（non-optional 字段缺失依然会抛错——
-    /// 这与项目现有约定一致：schemaVersion 升级时才引入破坏性变更）。
+    /// `thinkingModelId` / `thinkingEnabled` 同理：旧配置不含这两字段时分别回落到
+    /// nil / false，保持向后兼容。其余字段仍按合成 Codable 的语义处理（non-optional
+    /// 字段缺失依然会抛错——这与项目现有约定一致：schemaVersion 升级时才引入破坏性变更）。
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(String.self, forKey: .id)
@@ -78,6 +92,9 @@ public struct Tool: Identifiable, Sendable, Codable, Equatable {
         self.variables = try container.decode([String: String].self, forKey: .variables)
         // 缺失或非法值时回退到 .icon，保持向后兼容
         self.labelStyle = try container.decodeIfPresent(ToolLabelStyle.self, forKey: .labelStyle) ?? .icon
+        // 新增字段：旧配置不含时回落到 nil / false
+        self.thinkingModelId = try container.decodeIfPresent(String.self, forKey: .thinkingModelId)
+        self.thinkingEnabled = try container.decodeIfPresent(Bool.self, forKey: .thinkingEnabled) ?? false
     }
 }
 
