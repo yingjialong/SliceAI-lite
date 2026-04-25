@@ -29,7 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 默认级别为 `.info`，Console.app 需要在菜单栏开启 "Action → Include Info
     /// Messages"；命令行可用：
     /// `log stream --predicate 'subsystem == "com.sliceai.lite"' --level info`
-    private static let log = Logger(subsystem: "com.sliceai.lite", category: "AppDelegate")
+    /// 默认 internal 访问级别（不加 private）：让 `AppDelegate+Thinking` extension 跨文件访问
+    static let log = Logger(subsystem: "com.sliceai.lite", category: "AppDelegate")
 
     /// 应用的 DI 组合根，生命周期与 AppDelegate 相同
     let container: AppContainer
@@ -59,7 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// thinking toggle 进行中标志：防御快速连点 toggle 派出多个并发 task
     /// 上一个 toggle action 完整跑完前忽略新点击；@MainActor 隔离保证无 race
-    private var thinkingToggleInFlight: Bool = false
+    /// internal（不写 private）：让 AppDelegate+Thinking extension 跨文件访问
+    var thinkingToggleInFlight: Bool = false
 
     /// 构造：创建并持有 AppContainer；其余子系统在 didFinishLaunching 中装配
     override init() {

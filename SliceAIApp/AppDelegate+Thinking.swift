@@ -1,5 +1,7 @@
 // SliceAIApp/AppDelegate+Thinking.swift
 import AppKit
+import OSLog
+import SettingsUI
 import SliceCore
 
 /// AppDelegate 的 thinking-mode toggle 相关逻辑

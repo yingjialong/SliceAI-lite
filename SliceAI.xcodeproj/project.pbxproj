@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A2DE2D796BE12828E5486F1 /* AppDelegate+Thinking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083B35A2577F8B9956F33BD2 /* AppDelegate+Thinking.swift */; };
 		533BA7882F9695D00078EF4F /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533BA7802F9695D00078EF4F /* AppContainer.swift */; };
 		533BA7892F9695D00078EF4F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533BA7812F9695D00078EF4F /* AppDelegate.swift */; };
 		533BA78A2F9695D00078EF4F /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533BA7842F9695D00078EF4F /* MenuBarController.swift */; };
@@ -22,6 +23,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		083B35A2577F8B9956F33BD2 /* AppDelegate+Thinking.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "AppDelegate+Thinking.swift"; sourceTree = "<group>"; };
 		533BA76C2F9691D20078EF4F /* SliceAI-lite.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SliceAI-lite.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		533BA7802F9695D00078EF4F /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
 		533BA7812F9695D00078EF4F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -77,6 +79,7 @@
 				533BA7842F9695D00078EF4F /* MenuBarController.swift */,
 				533BA7852F9695D00078EF4F /* SliceAI.entitlements */,
 				533BA7862F9695D00078EF4F /* SliceAIApp.swift */,
+				083B35A2577F8B9956F33BD2 /* AppDelegate+Thinking.swift */,
 			);
 			path = SliceAIApp;
 			sourceTree = "<group>";
@@ -174,6 +177,7 @@
 				533BA7892F9695D00078EF4F /* AppDelegate.swift in Sources */,
 				533BA78A2F9695D00078EF4F /* MenuBarController.swift in Sources */,
 				533BA78B2F9695D00078EF4F /* SliceAIApp.swift in Sources */,
+				1A2DE2D796BE12828E5486F1 /* AppDelegate+Thinking.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
