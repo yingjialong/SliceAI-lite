@@ -378,19 +378,23 @@ final class ResultViewModel: ObservableObject {
     /// 拼接一段流式 delta 到现有文本，并可选累积 reasoning 内容
     ///
     /// 首次调用（thinking → streaming）时自动切换状态，让 UI 从加载态切至渲染态。
-    /// reasoning delta 来自 ChatChunk.reasoningDelta，仅在非 nil 时才累积到 accumulatedReasoning。
+    /// reasoning delta 来自 ChatChunk.reasoningDelta：
+    ///   - 当 thinkingEnabled == false 时**直接丢弃**——DeepSeek V4 即便收到 disable 模板
+    ///     仍可能回传 reasoning_content，UI 层尊重用户偏好不累积，避免反复 toggle
+    ///     时旧 reasoning 残留 / 内存膨胀
+    ///   - 状态切换条件相应只看正文 delta，避免 thinking off 时仅靠 reasoning 触发态切换
     func append(delta: String, reasoningDelta: String? = nil) {
-        // 收到首字节时从 thinking 切到 streaming
-        // 注意：仅有 reasoning delta 而 delta="" 时同样切换状态（reasoning 先于正文到达）
-        let hasContent = !delta.isEmpty || reasoningDelta != nil
+        // 仅当 thinking 启用时，reasoning delta 才被视为有效内容
+        let effectiveReasoning: String? = thinkingEnabled ? reasoningDelta : nil
+        // 收到首字节时从 thinking 切到 streaming（reasoning 先于正文到达时也算）
+        let hasContent = !delta.isEmpty || effectiveReasoning != nil
         if streamingState == .thinking, hasContent {
             streamingState = .streaming
         }
         if !delta.isEmpty {
             text += delta
         }
-        // 累积 reasoning 文本；非思考模型此字段始终为 nil，不影响正常流程
-        if let reasoning = reasoningDelta {
+        if let reasoning = effectiveReasoning {
             accumulatedReasoning += reasoning
         }
     }

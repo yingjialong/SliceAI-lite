@@ -87,14 +87,16 @@ struct ResultContent: View {
         }
     }
 
-    /// 思考过程折叠区：仅当有 reasoning 文本时渲染；默认折叠，文本可选、滚动高度上限 150pt
+    /// 思考过程折叠区：仅当 thinking 已启用 + 有 reasoning 文本时渲染
     ///
-    /// 使用 DesignSystem 的 caption / textSecondary token，与正文区保持视觉层级差异。
-    /// DisclosureGroup 绑定到 viewModel.reasoningExpanded，每次新流式任务开始时由
-    /// reset() 重置为折叠状态。
+    /// 双重守卫的原因：
+    ///   - `thinkingEnabled` 守卫：DeepSeek V4 即便收到 disable 模板（thinking.type=disabled）
+    ///     仍可能回传 reasoning_content 字段，UI 层尊重用户偏好直接不显示
+    ///   - `!isEmpty` 守卫：按需渲染，避免空 disclosure 占位
+    /// DisclosureGroup 绑定到 viewModel.reasoningExpanded，每次新流式任务由 reset() 折叠。
     @ViewBuilder
     private var reasoningDisclosure: some View {
-        if !viewModel.accumulatedReasoning.isEmpty {
+        if viewModel.thinkingEnabled && !viewModel.accumulatedReasoning.isEmpty {
             DisclosureGroup(isExpanded: Binding(
                 get: { viewModel.reasoningExpanded },
                 set: { viewModel.reasoningExpanded = $0 }
@@ -149,9 +151,11 @@ struct ResultContent: View {
                 viewModel.onRegenerate?()
             }
             // thinking 切换：仅当 provider 支持 thinking 切换时显示（showThinkingToggle=true）
+            // 单图标 + isActive 控制亮/暗：thinking ON 时品牌色高亮，OFF 时与其他控件同灰度
+            // 不再做 brain.head.profile <-> brain 的两图标切换——视觉差异太弱、用户难以区分
             if viewModel.showThinkingToggle {
                 IconButton(
-                    systemName: viewModel.thinkingEnabled ? "brain.head.profile" : "brain",
+                    systemName: "brain",
                     size: .small,
                     isActive: viewModel.thinkingEnabled,
                     help: viewModel.thinkingEnabled ? "切换为非思考模式" : "切换为思考模式"
