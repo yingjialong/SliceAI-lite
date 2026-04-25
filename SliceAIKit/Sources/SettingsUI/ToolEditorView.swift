@@ -197,13 +197,10 @@ public struct ToolEditorView: View {
                 .font(SliceFont.body)
             }
 
-            // Thinking 模式：根据 Provider.thinking 三态分别渲染
-            //
-            // 用 @ViewBuilder + switch-on-enum 而不是连续 if/else if，原因：
-            //   1. 显式覆盖三个 case（含 .none）保证 UI 永远给用户反馈，不会"字段消失"
-            //   2. 避免 enum-with-associated-values 的 == 比较易错（byModel 无关联值时 OK，
-            //      但与 byParameter 混用 == 与 case 模式风格不一致，未来扩展易踩坑）
-            thinkingSection
+            // Thinking 模式：详见 ToolThinkingSection.swift
+            // 抽出独立 view 是为了把 ToolEditorView 主 struct 行数压在
+            // SwiftLint type_body_length 警告阈值（250 行）之内
+            ToolThinkingSection(tool: $tool, currentProvider: currentProvider)
 
             // 采样温度 Slider
             SettingsRow("Temperature") {
@@ -234,57 +231,6 @@ public struct ToolEditorView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
             }
-        }
-    }
-
-    /// Thinking 模式相关字段；由 currentProvider?.thinking 三态驱动
-    ///
-    /// 三态都显式渲染：
-    ///   - .byModel：thinkingModelId 输入框（必填项）
-    ///   - .byParameter：只读说明，告诉用户已在 Provider 层配置
-    ///   - .none + Provider 存在：灰色提示"未启用 thinking 切换"，避免字段静默消失让用户困惑
-    ///   - .none + Provider nil（providerId 不在列表）：EmptyView，由 Provider Picker 区域兜底
-    @ViewBuilder
-    private var thinkingSection: some View {
-        switch currentProvider?.thinking {
-        case .byModel:
-            // 切 model id 模式：thinkingModelId 必填；空字符串映射为 nil 避免存无意义空串
-            SettingsRow("Thinking model id") {
-                TextField(
-                    "如 deepseek-reasoner",
-                    text: Binding(
-                        get: { tool.thinkingModelId ?? "" },
-                        set: { newValue in
-                            tool.thinkingModelId = newValue.isEmpty ? nil : newValue
-                        }
-                    )
-                )
-                .textFieldStyle(.plain)
-                .multilineTextAlignment(.trailing)
-                .foregroundColor(SliceColor.textPrimary)
-                .font(SliceFont.body)
-            }
-        case .byParameter:
-            // 参数透传：thinking 已在 Provider 层配置，工具层无需额外字段
-            SettingsRow("Thinking 模式") {
-                Text("该 Provider 已配置参数透传，无需在工具层配置")
-                    .font(SliceFont.body)
-                    .foregroundColor(SliceColor.textSecondary)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        case .none where currentProvider != nil:
-            // Provider 存在但 thinking == nil：显式提示，避免用户找不到字段而困惑
-            SettingsRow("Thinking 模式") {
-                Text("此 Provider 未启用 thinking 切换")
-                    .font(SliceFont.body)
-                    .foregroundColor(SliceColor.textTertiary)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        case .none:
-            // currentProvider 为 nil（providerId 不在列表）：EmptyView，由 Provider Picker 兜底
-            EmptyView()
         }
     }
 
