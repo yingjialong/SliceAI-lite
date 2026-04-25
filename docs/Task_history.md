@@ -4,6 +4,15 @@ SliceAI 项目任务历史记录索引。每条记录对应 `docs/Task-detail/` 
 
 ---
 
+## Task 26 · 思考模式切换功能（thinking mode toggle）
+
+- **时间**：2026-04-24 ~ 2026-04-25
+- **描述**：按工具持久化 thinking 偏好的端到端实现：Provider 声明 thinking 能力（`byModel` / `byParameter`）；Tool 持有 `thinkingEnabled` + `thinkingModelId`；ChatRequest 加 `extraBody` merge 进 body root；SSE fallback chain 提取 `delta.reasoning` / `delta.reasoning_content` 为 `ChatChunk.reasoningDelta`；ResultPanel 加 toggle 按钮 + "💭 思考过程" DisclosureGroup；SettingsUI 新增 7 个 byParameter 模板（OpenRouter unified / DeepSeek V4 / Anthropic adaptive+budget / OpenAI reasoning_effort / Qwen3 / custom）；首次启动 seed Provider 从 1 → 3（OpenAI / OpenRouter / DeepSeek V4），全部预填 thinking 模板。代码层 plan Task 1–7 已 commit；自动化三件套（build / test 124 用例 / lint 0 violations / xcodebuild）全绿；待手动 E2E 验收
+- **详情**：[docs/Task-detail/thinking-mode-toggle-2026-04-24.md](Task-detail/thinking-mode-toggle-2026-04-24.md)
+- **结果**：进行中（自动化已通过，待 OpenAI / OpenRouter / DeepSeek V4 真机 E2E + push）
+
+---
+
 ## Task 25 · 基于 Codex 评审修订 v2.0 Roadmap
 
 - **时间**：2026-04-23

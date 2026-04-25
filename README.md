@@ -91,6 +91,25 @@ cd SliceAIKit && swift test --parallel --enable-code-coverage
 
 ## 项目修改变动记录
 
+### 2026-04-25 · 思考模式切换功能（thinking mode toggle）— 自动化收尾
+
+**范围**：Task 26（spec / plan 见 `docs/superpowers/specs/2026-04-24-thinking-mode-toggle-design.md`、`docs/superpowers/plans/2026-04-24-thinking-mode-toggle.md`，详情见 `docs/Task-detail/thinking-mode-toggle-2026-04-24.md`）
+
+**主要变更**：
+- SliceCore 引入 `ProviderThinkingCapability`（`byModel` / `byParameter`）；`Tool` 加 `thinkingModelId` / `thinkingEnabled`；`ChatRequest` 加 `extraBody`（去 Codable 换简洁性）；`ChatChunk` 加 `reasoningDelta`
+- LLMProviders 在 `OpenAICompatibleProvider.buildURLRequest` merge `extraBody` 进 body root（不覆盖既有字段）；`decodeChunk` 用 fallback chain 提取 reasoning（`delta.reasoning` → `delta.reasoning_content` → nil）—— 任何模板/直连无需绑定即可工作
+- SettingsUI 新增 `ProviderThinkingSectionView`：模式 Picker + 7 模板选择（OpenRouter unified / DeepSeek V4 / Anthropic adaptive+budget / OpenAI reasoning_effort / Qwen3 / custom）+ 双 JSON 编辑器 + 实时校验；`ToolEditorView` 在 byModel 模式下显示 `thinkingModelId` 字段；`SettingsViewModel.toggleThinking()` 提供持久化入口
+- Windowing/ResultPanel 顶部新增 brain.head.profile toggle 按钮 + "💭 思考过程" DisclosureGroup（默认折叠、流式累积 reasoningDelta）；AppDelegate 桥接 `onToggleThinking`：cancel 旧 streamTask → 新 execute
+- DefaultConfiguration seed Provider 从 1 → 3：OpenAI（`reasoning_effort`）+ OpenRouter（unified `reasoning.effort`）+ DeepSeek V4（`thinking.type`），全部预填 thinking 模板，用户首次启动只需填 API Key 即可启用 thinking 切换
+- 全部新字段 backward compat（`decodeIfPresent`），schemaVersion 不 bump；老用户 config.json 不会自动注入新增 Provider，需要手动添加
+
+**验证状态**：
+- `swift build`：Build complete
+- `swift test --parallel --enable-code-coverage`：124/124 通过（新增 1 个 `test_defaultConfig_providersThinkingPrefilled` 字面值断言）
+- `swiftlint lint --strict`：0 violations
+- `xcodebuild -scheme SliceAI -configuration Debug build`：BUILD SUCCEEDED
+- 真机 E2E（DeepSeek V4 / OpenRouter / 错误路径）：**待验收**
+
 ### 2026-04-23 · 从 SliceAI 分叉为独立 SliceAI-lite 仓库
 
 **范围**：仓库隔离 + 产物重命名 + 图标 + 签名修复（commits `4119621..a8712d5`）

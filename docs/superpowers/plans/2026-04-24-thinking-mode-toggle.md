@@ -60,7 +60,7 @@
 
 ### Step 1: Write failing test for ProviderThinkingCapability Codable
 
-- [ ] Create `SliceAIKit/Tests/SliceCoreTests/ProviderThinkingCapabilityTests.swift`:
+- [x] Create `SliceAIKit/Tests/SliceCoreTests/ProviderThinkingCapabilityTests.swift`:
 
 ```swift
 import XCTest
@@ -102,13 +102,13 @@ final class ProviderThinkingCapabilityTests: XCTestCase {
 
 ### Step 2: Run tests to verify failure
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ProviderThinkingCapabilityTests`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ProviderThinkingCapabilityTests`
 
 Expected: compilation error "no such type 'ProviderThinkingCapability'"
 
 ### Step 3: Implement ProviderThinkingCapability enum
 
-- [ ] Create `SliceAIKit/Sources/SliceCore/ProviderThinkingCapability.swift`:
+- [x] Create `SliceAIKit/Sources/SliceCore/ProviderThinkingCapability.swift`:
 
 ```swift
 import Foundation
@@ -137,13 +137,13 @@ Note: Swift 编译器自动合成的 Codable 对 enum-with-associated-values 会
 
 ### Step 4: Run tests to verify pass
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ProviderThinkingCapabilityTests`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ProviderThinkingCapabilityTests`
 
 Expected: 3 tests pass.
 
 ### Step 5: Add Provider.thinking field with backward-compat decode
 
-- [ ] Modify `SliceAIKit/Sources/SliceCore/Provider.swift` — replace the entire struct body with:
+- [x] Modify `SliceAIKit/Sources/SliceCore/Provider.swift` — replace the entire struct body with:
 
 ```swift
 public struct Provider: Identifiable, Sendable, Codable, Equatable {
@@ -208,7 +208,7 @@ public struct Provider: Identifiable, Sendable, Codable, Equatable {
 
 ### Step 6: Add Tool.thinkingModelId + Tool.thinkingEnabled with backward-compat decode
 
-- [ ] Modify `SliceAIKit/Sources/SliceCore/Tool.swift` — change `public struct Tool` to:
+- [x] Modify `SliceAIKit/Sources/SliceCore/Tool.swift` — change `public struct Tool` to:
 
   - Add two stored properties after `labelStyle`:
     ```swift
@@ -245,7 +245,7 @@ public struct Provider: Identifiable, Sendable, Codable, Equatable {
 
 ### Step 7: Write failing test for Tool backward-compat decode
 
-- [ ] Modify `SliceAIKit/Tests/SliceCoreTests/ToolTests.swift` — add at end of class:
+- [x] Modify `SliceAIKit/Tests/SliceCoreTests/ToolTests.swift` — add at end of class:
 
 ```swift
 /// 旧版 JSON 不含 thinkingModelId / thinkingEnabled 时应解码成 nil / false
@@ -290,13 +290,13 @@ func test_toolDecode_newJSON_thinkingFieldsRoundTrip() throws {
 
 ### Step 8: Run Tool tests
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ToolTests`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ToolTests`
 
 Expected: existing tests still pass + 2 new tests pass.
 
 ### Step 9: Add ChatRequest.extraBody and ChatChunk.reasoningDelta
 
-- [ ] Modify `SliceAIKit/Sources/SliceCore/ChatTypes.swift` — replace ChatRequest struct with:
+- [x] Modify `SliceAIKit/Sources/SliceCore/ChatTypes.swift` — replace ChatRequest struct with:
 
 ```swift
 /// 聊天请求
@@ -382,7 +382,7 @@ public struct ChatChunk: Sendable, Equatable {
 
 ### Step 10: Write failing tests for ChatRequest extraBody Equatable + ChatChunk reasoningDelta
 
-- [ ] Modify `SliceAIKit/Tests/SliceCoreTests/ChatTypesTests.swift` — add at end of class:
+- [x] Modify `SliceAIKit/Tests/SliceCoreTests/ChatTypesTests.swift` — add at end of class:
 
 ```swift
 /// extraBody 内容相同时两个 ChatRequest 应相等（NSDictionary 桥接比较）
@@ -437,13 +437,13 @@ func test_chatChunk_reasoningDelta_defaultsNil() {
 
 ### Step 11: Run all SliceCore tests
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests --parallel`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests --parallel`
 
 Expected: all existing tests still pass + new tests pass. **No existing test should break.** If any existing test breaks (e.g. `Tool.init` call sites missing the new `thinkingModelId` / `thinkingEnabled` defaults), the fix is to use the default-arg form (parameters have defaults so call sites need no change).
 
 ### Step 12: Commit
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 git -C /Users/majiajun/workspace/SliceAI-lite add \
@@ -476,7 +476,7 @@ All new fields default to nil/false; old config.json loads unchanged."
 
 ### Step 1: Write failing tests for thinking-mode decision branches
 
-- [ ] Modify `SliceAIKit/Tests/SliceCoreTests/ToolExecutorTests.swift` — add helper plus 7 new tests:
+- [x] Modify `SliceAIKit/Tests/SliceCoreTests/ToolExecutorTests.swift` — add helper plus 7 new tests:
 
 ```swift
 // MARK: - Thinking mode tests
@@ -699,13 +699,13 @@ Notes for the implementer:
 
 ### Step 2: Run tests to verify they fail (TDD red)
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ToolExecutorTests`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ToolExecutorTests`
 
 Expected: 7 new tests fail (model is still `tool.modelId` regardless of `thinkingEnabled`, and extraBody is always nil).
 
 ### Step 3: Implement ToolExecutor decision logic
 
-- [ ] Modify `SliceAIKit/Sources/SliceCore/ToolExecutor.swift` — replace step 5 block (the `let request = ChatRequest(...)` line) with:
+- [x] Modify `SliceAIKit/Sources/SliceCore/ToolExecutor.swift` — replace step 5 block (the `let request = ChatRequest(...)` line) with:
 
 ```swift
         // 5. 构造 ChatRequest：按 tool.thinkingEnabled × provider.thinking 决定 model + extraBody
@@ -758,13 +758,13 @@ Expected: 7 new tests fail (model is still `tool.modelId` regardless of `thinkin
 
 ### Step 4: Run tests to verify they pass
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ToolExecutorTests`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter SliceCoreTests.ToolExecutorTests`
 
 Expected: all existing ToolExecutorTests pass + 7 new tests pass.
 
 ### Step 5: Commit
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 git -C /Users/majiajun/workspace/SliceAI-lite add \
@@ -792,7 +792,7 @@ provider.thinking == nil -> ignores thinkingEnabled (unchanged behavior)"
 
 ### Step 1: Add reasoning fields to OpenAIStreamChunk DTO
 
-- [ ] Modify `SliceAIKit/Sources/LLMProviders/OpenAIDTOs.swift` — find `OpenAIStreamChunk.Choice.Delta` struct and add two optional fields:
+- [x] Modify `SliceAIKit/Sources/LLMProviders/OpenAIDTOs.swift` — find `OpenAIStreamChunk.Choice.Delta` struct and add two optional fields:
 
 ```swift
 // 现有字段（如 content 等）保留
@@ -815,7 +815,7 @@ Verify exact struct location: `grep -n "struct.*Delta\|delta:" SliceAIKit/Source
 
 ### Step 2: Modify decodeChunk to extract reasoning via fallback chain
 
-- [ ] Modify `SliceAIKit/Sources/LLMProviders/OpenAICompatibleProvider.swift` — replace the `decodeChunk` method body (around lines 187-205) with:
+- [x] Modify `SliceAIKit/Sources/LLMProviders/OpenAICompatibleProvider.swift` — replace the `decodeChunk` method body (around lines 187-205) with:
 
 ```swift
 private static func decodeChunk(json: String) throws -> ChatChunk? {
@@ -844,7 +844,7 @@ private static func decodeChunk(json: String) throws -> ChatChunk? {
 
 ### Step 3: Modify buildURLRequest to merge extraBody into request body
 
-- [ ] Modify `SliceAIKit/Sources/LLMProviders/OpenAICompatibleProvider.swift` — replace `buildURLRequest` body's body construction block (around lines 62-68):
+- [x] Modify `SliceAIKit/Sources/LLMProviders/OpenAICompatibleProvider.swift` — replace `buildURLRequest` body's body construction block (around lines 62-68):
 
 ```swift
 // 追加 stream: true 与 extraBody（thinking 模式参数）；其余字段由 ChatRequest 编码产出
@@ -864,7 +864,7 @@ httpReq.httpBody = body
 
 ### Step 4: Create SSE fixture for OpenRouter reasoning
 
-- [ ] Create `SliceAIKit/Tests/LLMProvidersTests/Fixtures/sse-openrouter-reasoning.txt` — exact content (note the empty line between events):
+- [x] Create `SliceAIKit/Tests/LLMProvidersTests/Fixtures/sse-openrouter-reasoning.txt` — exact content (note the empty line between events):
 
 ```
 data: {"choices":[{"delta":{"reasoning":"Let me think...","content":""}}]}
@@ -879,7 +879,7 @@ data: [DONE]
 
 ### Step 5: Create SSE fixture for DeepSeek reasoning_content
 
-- [ ] Create `SliceAIKit/Tests/LLMProvidersTests/Fixtures/sse-deepseek-reasoning-content.txt`:
+- [x] Create `SliceAIKit/Tests/LLMProvidersTests/Fixtures/sse-deepseek-reasoning-content.txt`:
 
 ```
 data: {"choices":[{"delta":{"reasoning_content":"Analyzing the input...","content":""}}]}
@@ -894,7 +894,7 @@ data: [DONE]
 
 ### Step 6: Write failing tests for extraBody merge + reasoning extraction
 
-- [ ] Modify `SliceAIKit/Tests/LLMProvidersTests/OpenAICompatibleProviderTests.swift` — add at end of class (verify `MockURLProtocol` setup style by reading existing tests in the same file):
+- [x] Modify `SliceAIKit/Tests/LLMProvidersTests/OpenAICompatibleProviderTests.swift` — add at end of class (verify `MockURLProtocol` setup style by reading existing tests in the same file):
 
 ```swift
 // MARK: - extraBody merge
@@ -1020,13 +1020,13 @@ Notes:
 
 ### Step 7: Run tests
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter LLMProvidersTests --parallel`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --filter LLMProvidersTests --parallel`
 
 Expected: existing tests still pass + 4 new tests pass.
 
 ### Step 8: Commit
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 git -C /Users/majiajun/workspace/SliceAI-lite add \
@@ -1057,7 +1057,7 @@ git -C /Users/majiajun/workspace/SliceAI-lite commit -m "feat(llmproviders): mer
 
 ### Step 1: Add toggleThinking + saveTools to SettingsViewModel
 
-- [ ] Modify `SliceAIKit/Sources/SettingsUI/SettingsViewModel.swift` — add at end of class (before closing brace):
+- [x] Modify `SliceAIKit/Sources/SettingsUI/SettingsViewModel.swift` — add at end of class (before closing brace):
 
 ```swift
 /// 切换指定工具的 thinking 偏好并立即持久化
@@ -1097,7 +1097,7 @@ public func saveTools() async {
 
 ### Step 2: Create ThinkingTemplate enum + payload constants
 
-- [ ] Create `SliceAIKit/Sources/SettingsUI/Thinking/ThinkingTemplate.swift`:
+- [x] Create `SliceAIKit/Sources/SettingsUI/Thinking/ThinkingTemplate.swift`:
 
 ```swift
 import Foundation
@@ -1196,17 +1196,17 @@ public enum ProviderThinkingTemplate: String, CaseIterable, Identifiable {
 
 ### Step 3: Build + run all SliceAIKit tests to confirm no regressions
 
-- [ ] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
+- [x] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
 
 Expected: build complete, no errors.
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --parallel`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --parallel`
 
 Expected: all tests pass.
 
 ### Step 4: Commit
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 git -C /Users/majiajun/workspace/SliceAI-lite add \
@@ -1236,11 +1236,11 @@ This task is UI-only; spec §7.2 explicitly accepts "no unit tests for SwiftUI v
 
 ### Step 1: Read current ProviderEditorView structure
 
-- [ ] Read `SliceAIKit/Sources/SettingsUI/ProviderEditorView.swift` end-to-end. Identify where the existing "Provider name / baseURL / apiKey / defaultModel" form fields live. The thinking section will append below those.
+- [x] Read `SliceAIKit/Sources/SettingsUI/ProviderEditorView.swift` end-to-end. Identify where the existing "Provider name / baseURL / apiKey / defaultModel" form fields live. The thinking section will append below those.
 
 ### Step 2: Add ThinkingMode picker + template picker + JSON textareas
 
-- [ ] In `ProviderEditorView.swift`, add (or extend) the form `Section` block — pseudocode showing the structure to implement; adapt to the existing SwiftUI binding patterns in the file:
+- [x] In `ProviderEditorView.swift`, add (or extend) the form `Section` block — pseudocode showing the structure to implement; adapt to the existing SwiftUI binding patterns in the file:
 
 ```swift
 // 1. 顶部声明状态：当前编辑的 provider 是否启用 thinking、用什么模板、当前 JSON 文本
@@ -1391,13 +1391,13 @@ private func loadThinkingFromProvider() {
 
 ### Step 3: Verify build
 
-- [ ] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
+- [x] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
 
 Expected: build succeeds. If type errors appear (e.g. binding to provider in a List), follow the existing pattern in ProviderEditorView for that.
 
 ### Step 4: Commit
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 git -C /Users/majiajun/workspace/SliceAI-lite add \
@@ -1423,11 +1423,11 @@ flagged inline (red border + caption) and not committed to the config."
 
 ### Step 1: Read current ToolEditorView
 
-- [ ] Read `SliceAIKit/Sources/SettingsUI/ToolEditorView.swift`. Locate the existing fields (modelId, providerId picker, etc.).
+- [x] Read `SliceAIKit/Sources/SettingsUI/ToolEditorView.swift`. Locate the existing fields (modelId, providerId picker, etc.).
 
 ### Step 2: Add conditional thinkingModelId field
 
-- [ ] In `ToolEditorView.swift`, near the existing `modelId` field, add:
+- [x] In `ToolEditorView.swift`, near the existing `modelId` field, add:
 
 ```swift
 // 在 view body 内部，找到 modelId TextField 那一节后面
@@ -1458,13 +1458,13 @@ private var currentProvider: Provider? {
 
 ### Step 3: Verify build
 
-- [ ] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
+- [x] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
 
 Expected: build succeeds.
 
 ### Step 4: Commit
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 git -C /Users/majiajun/workspace/SliceAI-lite add \
@@ -1489,14 +1489,14 @@ This task is also UI-only (spec §7.2). Each step is code + `swift build`.
 
 ### Step 1: Read ResultPanel + ResultContentView structure
 
-- [ ] Read both files to understand:
+- [x] Read both files to understand:
   - Where the header HStack with toolName / model / pin / regenerate / close lives
   - How `chunk.delta` is currently accumulated (likely a `@Published` or `@Observable` String)
   - How `onRegenerate` closure is invoked
 
 ### Step 2: Add reasoning accumulator + toggle state to ResultPanel state model
 
-- [ ] Find the state-holding object in ResultPanel (likely `@Observable` or `ObservableObject` view model). Add:
+- [x] Find the state-holding object in ResultPanel (likely `@Observable` or `ObservableObject` view model). Add:
 
 ```swift
 /// 流式累积的 reasoning 文本（OpenRouter delta.reasoning / DeepSeek delta.reasoning_content）
@@ -1524,7 +1524,7 @@ Note: the existing API may use a separate `append(_ delta: String)` overload tak
 
 ### Step 3: Add toggle button to header
 
-- [ ] In ResultPanel's header HStack, add (next to the pin / regenerate buttons):
+- [x] In ResultPanel's header HStack, add (next to the pin / regenerate buttons):
 
 ```swift
 // 仅当 tool 的 provider 支持 thinking 切换时显示
@@ -1545,7 +1545,7 @@ if shouldShowThinkingToggle {
 
 ### Step 4: Add reasoning DisclosureGroup above main content
 
-- [ ] In ResultContentView (or wherever main markdown render lives), add ABOVE the existing markdown view:
+- [x] In ResultContentView (or wherever main markdown render lives), add ABOVE the existing markdown view:
 
 ```swift
 if !state.accumulatedReasoning.isEmpty {
@@ -1572,7 +1572,7 @@ if !state.accumulatedReasoning.isEmpty {
 
 ### Step 5: Wire AppDelegate to inject onToggleThinking and read provider.thinking
 
-- [ ] In `SliceAIApp/AppDelegate.swift` `execute(tool:payload:)` function, where `container.resultPanel.open(...)` is called, add `shouldShowThinkingToggle` based on `provider.thinking != nil` and `onToggleThinking` closure:
+- [x] In `SliceAIApp/AppDelegate.swift` `execute(tool:payload:)` function, where `container.resultPanel.open(...)` is called, add `shouldShowThinkingToggle` based on `provider.thinking != nil` and `onToggleThinking` closure:
 
 ```swift
 let provider = container.configStore.current.providers.first { $0.id == tool.providerId }
@@ -1619,17 +1619,17 @@ onToggleThinking: { [weak self] in
 
 ### Step 6: Verify build
 
-- [ ] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
+- [x] Run: `swift build --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit`
 
 Expected: build succeeds.
 
-- [ ] Run: `xcodebuild -project /Users/majiajun/workspace/SliceAI-lite/SliceAI.xcodeproj -scheme SliceAI -configuration Debug -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO 2>&1 | tail -5`
+- [x] Run: `xcodebuild -project /Users/majiajun/workspace/SliceAI-lite/SliceAI.xcodeproj -scheme SliceAI -configuration Debug -destination 'platform=macOS' build CODE_SIGNING_ALLOWED=NO 2>&1 | tail -5`
 
 Expected: `** BUILD SUCCEEDED **`
 
 ### Step 7: Commit
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 git -C /Users/majiajun/workspace/SliceAI-lite add \
@@ -1659,19 +1659,19 @@ This task confirms each layer integrates correctly. Each step is a manual user-d
 
 ### Step 1: Full SwiftPM test sweep
 
-- [ ] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --parallel --enable-code-coverage`
+- [x] Run: `swift test --package-path /Users/majiajun/workspace/SliceAI-lite/SliceAIKit --parallel --enable-code-coverage`
 
 Expected: all tests pass (existing 99 + ~17 new ones from Tasks 1-3).
 
 ### Step 2: Full SwiftLint sweep
 
-- [ ] Run: `(cd /Users/majiajun/workspace/SliceAI-lite && swiftlint lint --strict)`
+- [x] Run: `(cd /Users/majiajun/workspace/SliceAI-lite && swiftlint lint --strict)`
 
 Expected: 0 violations.
 
 ### Step 3: Xcode build
 
-- [ ] Run: `scripts/build-dmg.sh 0.2.0` (or `xcodebuild -scheme SliceAI -configuration Debug build` if just testing the build)
+- [x] Run: `scripts/build-dmg.sh 0.2.0` (or `xcodebuild -scheme SliceAI -configuration Debug build` if just testing the build)
 
 Expected: build succeeds and produces DMG with ad-hoc-signed .app.
 
