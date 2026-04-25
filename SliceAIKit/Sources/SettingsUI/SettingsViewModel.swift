@@ -171,31 +171,19 @@ public final class SettingsViewModel: ObservableObject {
     /// 与 saveTriggers / saveHotkeys 的处理风格一致。
     /// - Parameter toolId: 要切换的工具 id
     public func toggleThinking(for toolId: Tool.ID) async {
-        guard let idx = configuration.tools.firstIndex(where: { $0.id == toolId }) else {
-            print("[SettingsViewModel] toggleThinking: tool '\(toolId)' not found")
-            return
-        }
+        guard let idx = configuration.tools.firstIndex(where: { $0.id == toolId }) else { return }
         configuration.tools[idx].thinkingEnabled.toggle()
-        let newValue = configuration.tools[idx].thinkingEnabled
-        do {
-            try await store.update(configuration)
-            print("[SettingsViewModel] toggleThinking: '\(toolId)' -> \(newValue)")
-        } catch {
-            print("[SettingsViewModel] toggleThinking: persist failed – \(error.localizedDescription)")
-        }
+        // IO 失败静默吞错：内存态已 toggle，下次启动 reload 以磁盘为准；
+        // 调用方（AppDelegate）已经会触发 re-execute，用户能感知到行为变化
+        try? await store.update(configuration)
     }
 
     /// 将当前 configuration.tools 写回磁盘，供工具编辑页 onChange 立即持久化
     ///
     /// 与 saveTriggers / saveHotkeys 同构：调用方更新 configuration.tools 后调用此方法；
-    /// IO 失败仅打日志，不向上抛错。
+    /// IO 失败静默（用户下次编辑会再次触发 save，不需要日志）
     public func saveTools() async {
-        do {
-            try await store.update(configuration)
-            print("[SettingsViewModel] saveTools: persisted OK")
-        } catch {
-            print("[SettingsViewModel] saveTools: persist failed – \(error.localizedDescription)")
-        }
+        try? await store.update(configuration)
     }
 
     /// 测试 Provider 配置是否可用
