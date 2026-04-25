@@ -374,52 +374,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    /// thinking 切换按钮显隐逻辑：provider.thinking 非 nil，且 byModel 时 tool 有 thinkingModelId
-    ///
-    /// 使用 settingsViewModel.configuration（@MainActor @Published）同步读取，无需 await。
-    private func shouldShowThinkingToggle(for tool: SliceCore.Tool) -> Bool {
-        let provider = container.settingsViewModel.configuration.providers
-            .first(where: { $0.id == tool.providerId })
-        guard let thinking = provider?.thinking else { return false }
-        switch thinking {
-        case .byModel:
-            return tool.thinkingModelId != nil
-        case .byParameter:
-            return true
-        }
-    }
-
-    /// 构造 thinking 切换 closure：先取消当前 stream，持久化后用最新 tool 快照重新执行
-    ///
-    /// 关键点：
-    /// - 必须先 `cancelStream()` 再 `execute()`，否则旧 stream 会继续 append chunk，
-    ///   与新 stream 的 chunk 在 ResultPanel 内并发写入 viewModel.text 导致输出乱序
-    /// - `cancelStream` 由 caller 注入（捕获 streamTask），helper 不持有 streamTask 引用
-    /// - toggleThinking 后 `tool` 局部变量 stale，需从最新 configuration 取 fresh 快照
-    private func makeToggleThinkingAction(
-        for tool: SliceCore.Tool,
-        payload: SelectionPayload,
-        cancelStream: @escaping @Sendable () -> Void
-    ) -> (@MainActor () -> Void) {
-        { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                // 防止快速连点：上一个 toggle 完整跑完前忽略后续点击。
-                // generation counter 已经能阻止旧 stream 污染内容，这里追加防御主要是
-                // 避免无意义地派多个 streamTask + open() 闪烁
-                guard !self.thinkingToggleInFlight else { return }
-                self.thinkingToggleInFlight = true
-                defer { self.thinkingToggleInFlight = false }
-                cancelStream()
-                await self.container.settingsViewModel.toggleThinking(for: tool.id)
-                guard let fresh = self.container.settingsViewModel.configuration.tools
-                    .first(where: { $0.id == tool.id }) else { return }
-                // swiftlint:disable:next line_length
-                Self.log.info("onToggleThinking: re-run tool=\(fresh.name, privacy: .public) enabled=\(fresh.thinkingEnabled, privacy: .public)")
-                self.execute(tool: fresh, payload: payload)
-            }
-        }
-    }
+    // 注：shouldShowThinkingToggle / makeToggleThinkingAction 见 AppDelegate+Thinking.swift
+    // （拆出 extension 是为了把本文件压在 SwiftLint file_length 阈值 500 行之内；
+    // thinkingToggleInFlight 字段因 Swift 限制必须留在主类，见上方）
 
     /// 统一处理 stream task 的错误：取消错误静默退出，其他错误映射到 SliceError 展示给用户
     /// - Parameters:
