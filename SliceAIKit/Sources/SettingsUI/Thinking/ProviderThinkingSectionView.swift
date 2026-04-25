@@ -66,6 +66,12 @@ struct ProviderThinkingSectionView: View {
             // 视图出现时从已保存的 provider.thinking 反推 UI 状态
             loadThinkingFromProvider()
         }
+        // Provider 切换时（list 复用同一个 view 实例）重新 load，避免 @State 残留
+        // 上一个 Provider 的 thinkingMode / template / JSON，导致 commitThinking()
+        // 把旧值悄悄写回新 Provider
+        .onChange(of: provider.id) { _, _ in
+            loadThinkingFromProvider()
+        }
     }
 
     // MARK: - byParameter 子内容
