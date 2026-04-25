@@ -22,7 +22,11 @@
           "name": { "type": "string" },
           "baseURL": { "type": "string", "format": "uri" },
           "apiKeyRef": { "type": "string", "pattern": "^keychain:" },
-          "defaultModel": { "type": "string" }
+          "defaultModel": { "type": "string" },
+          "thinking": {
+            "type": ["object", "null"],
+            "description": "Provider 的 thinking 切换能力。null=不支持；{\"byModel\":{}}=切 model id；{\"byParameter\":{\"enableBodyJSON\":\"...\",\"disableBodyJSON\":null|\"...\"}}=参数透传到 request body root。Swift Codable 自动序列化 ProviderThinkingCapability enum 后形如此结构。"
+          }
         }
       }
     },
@@ -45,6 +49,15 @@
           "variables": {
             "type": "object",
             "additionalProperties": { "type": "string" }
+          },
+          "thinkingModelId": {
+            "type": ["string", "null"],
+            "description": "仅当 Provider.thinking == byModel 时有意义；切换到 thinking 模式时改用此 model id"
+          },
+          "thinkingEnabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "用户上次切换的 thinking 偏好；ResultPanel toggle 后立即持久化"
           },
           "labelStyle": {
             "type": "string",

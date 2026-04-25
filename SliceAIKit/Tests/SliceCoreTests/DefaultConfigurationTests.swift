@@ -14,11 +14,51 @@ final class DefaultConfigurationTests: XCTestCase {
         XCTAssertEqual(ids, ["translate", "polish", "summarize", "explain"])
     }
 
-    /// 默认配置仅附带一个 OpenAI 官方 Provider
-    func test_defaultConfig_hasOneProvider() {
+    /// 默认配置必须预置 OpenAI / OpenRouter / DeepSeek V4 三家 Provider
+    ///
+    /// 用 Set 比较以避免顺序耦合；如未来新增 / 删除 seed Provider，需同步更新此用例。
+    func test_defaultConfig_hasThreeProviders() {
         let cfg = DefaultConfiguration.initial()
-        XCTAssertEqual(cfg.providers.count, 1)
-        XCTAssertEqual(cfg.providers.first?.id, "openai-official")
+        XCTAssertEqual(cfg.providers.count, 3)
+        let ids = Set(cfg.providers.map(\.id))
+        XCTAssertEqual(ids, ["openai-official", "openrouter", "deepseek-v4"])
+    }
+
+    /// 三个 seed Provider 的 thinking 字段必须均预填为 byParameter 模式
+    ///
+    /// 各家 enable / disable JSON 字面值必须与 `SettingsUI/Thinking/ThinkingTemplate.swift`
+    /// 中相应模板（openAIReasoningEffort / openRouterUnified / deepSeekV4）保持字符精确一致，
+    /// 否则 ProviderEditorView 打开默认 Provider 时 ThinkingTemplate.match() 将匹配失败、
+    /// UI 错显为"自定义"模板，破坏首次启动的开箱即用体验。
+    func test_defaultConfig_providersThinkingPrefilled() {
+        let cfg = DefaultConfiguration.initial()
+        // 用 id → Provider 的字典，按 id 单测，避免数组顺序耦合
+        let byId = Dictionary(uniqueKeysWithValues: cfg.providers.map { ($0.id, $0) })
+
+        // OpenAI: reasoning_effort
+        XCTAssertEqual(
+            byId["openai-official"]?.thinking,
+            .byParameter(
+                enableBodyJSON: #"{"reasoning_effort":"medium"}"#,
+                disableBodyJSON: #"{"reasoning_effort":"minimal"}"#
+            )
+        )
+        // OpenRouter: unified reasoning.effort
+        XCTAssertEqual(
+            byId["openrouter"]?.thinking,
+            .byParameter(
+                enableBodyJSON: #"{"reasoning":{"effort":"medium"}}"#,
+                disableBodyJSON: #"{"reasoning":{"effort":"none"}}"#
+            )
+        )
+        // DeepSeek V4: thinking.type
+        XCTAssertEqual(
+            byId["deepseek-v4"]?.thinking,
+            .byParameter(
+                enableBodyJSON: #"{"thinking":{"type":"enabled"}}"#,
+                disableBodyJSON: #"{"thinking":{"type":"disabled"}}"#
+            )
+        )
     }
 
     /// 每个工具引用的 providerId 必须指向已注册的 Provider
