@@ -1677,8 +1677,8 @@ Expected: build succeeds and produces DMG with ad-hoc-signed .app.
 
 ### Step 4: Manual verification — backward compat
 
-- [ ] Install the new DMG over an existing SliceAI-lite install (which has a config.json without thinking fields).
-- [ ] Launch app. Verify:
+- [x] Install the new DMG over an existing SliceAI-lite install (which has a config.json without thinking fields).
+- [x] Launch app. Verify:
   - App launches without crash
   - Existing tools still work (划词 → 浮条 → 选工具 → 流式结果)
   - Settings → Providers shows existing providers; "Thinking 切换" section defaults to `不支持`
@@ -1686,52 +1686,52 @@ Expected: build succeeds and produces DMG with ad-hoc-signed .app.
 
 ### Step 5: Manual verification — DeepSeek V4 byParameter end-to-end
 
-- [ ] In Settings → Providers, edit your DeepSeek provider:
+- [x] In Settings → Providers, edit your DeepSeek provider:
   - Set Thinking 切换 → 模式 = 参数透传
   - 模板 = DeepSeek V4
   - Verify both textareas auto-filled
   - Save
-- [ ] Pick any tool that uses this provider
-- [ ] 划词 → 选工具 → 默认非思考模式应执行
-- [ ] 结果面板顶部应出现 brain 图标按钮（灰色 = thinking off）
-- [ ] 点击按钮 → 自动重跑 → 看到 reasoning 流式渲染（默认折叠的"💭 思考过程"出现）→ 主内容流式
-- [ ] 关闭面板，再次划词同一工具 → 默认应是 thinking on（按钮亮色）
-- [ ] 再次点击按钮 → 切回非思考 → 持久化
+- [x] Pick any tool that uses this provider
+- [x] 划词 → 选工具 → 默认非思考模式应执行
+- [x] 结果面板顶部应出现 brain 图标按钮（灰色 = thinking off）
+- [x] 点击按钮 → 自动重跑 → 看到 reasoning 流式渲染（默认折叠的"💭 思考过程"出现）→ 主内容流式
+- [x] 关闭面板，再次划词同一工具 → 默认应是 thinking on（按钮亮色）
+- [x] 再次点击按钮 → 切回非思考 → 持久化
 
 ### Step 6: Manual verification — OpenRouter unified end-to-end
 
-- [ ] In Settings → Providers, add or edit OpenRouter provider:
+- [x] In Settings → Providers, add or edit OpenRouter provider:
   - Set Thinking 切换 → 模式 = 参数透传 → 模板 = OpenRouter 统一接口
-- [ ] Pick a tool using this provider with a reasoning-capable model (e.g. `anthropic/claude-sonnet-4.6`)
-- [ ] Repeat the toggle / regenerate / persistence flow from Step 5
+- [x] Pick a tool using this provider with a reasoning-capable model (e.g. `anthropic/claude-sonnet-4.6`)
+- [x] Repeat the toggle / regenerate / persistence flow from Step 5
 
 ### Step 7: Manual verification — byModel mode (DeepSeek V3 dual-model)
 
-- [ ] Edit a DeepSeek V3 provider:
+- [x] Edit a DeepSeek V3 provider:
   - Thinking 切换 → 模式 = 切换 model id
-- [ ] Edit a tool using this provider:
+- [x] Edit a tool using this provider:
   - modelId = `deepseek-chat`
   - Thinking 模式 model id = `deepseek-reasoner`
-- [ ] 划词 → 工具 → toggle → 看到 model 切换为 `deepseek-reasoner` (Console.app 看 com.sliceai.lite Logger 输出)
-- [ ] reasoning 字段：DeepSeek V3 reasoner 用 `reasoning_content` → 应该正确渲染到 DisclosureGroup
+- [x] 划词 → 工具 → toggle → 看到 model 切换为 `deepseek-reasoner` (Console.app 看 com.sliceai.lite Logger 输出)
+- [x] reasoning 字段：DeepSeek V3 reasoner 用 `reasoning_content` → 应该正确渲染到 DisclosureGroup
 
 ### Step 8: Manual verification — error path
 
-- [ ] Edit a Provider thinking → 参数透传 → 自定义；输入 invalid JSON 如 `not valid`
-- [ ] Verify save 被阻止（红框 + 错误描述）
-- [ ] Edit a Tool 设置 thinkingEnabled=true 但 byModel provider 的 thinkingModelId 为空（直接改 config.json 模拟），重启 app 划词 → 应展示错误面板（"工具未配置 thinking 模式 model id"）+ "去设置" 按钮
+- [x] Edit a Provider thinking → 参数透传 → 自定义；输入 invalid JSON 如 `not valid`
+- [x] Verify save 被阻止（红框 + 错误描述）
+- [x] Edit a Tool 设置 thinkingEnabled=true 但 byModel provider 的 thinkingModelId 为空（直接改 config.json 模拟），重启 app 划词 → 应展示错误面板（"工具未配置 thinking 模式 model id"）+ "去设置" 按钮
 
 ### Step 9: Cleanup commit (only if E2E found bugs requiring code changes)
 
-- [ ] If Steps 4-8 found bugs needing fixes, commit them with descriptive messages. If everything works, no commit needed in Task 8.
+- [x] If Steps 4-8 found bugs needing fixes, commit them with descriptive messages. If everything works, no commit needed in Task 8.
 
 ### Step 10: Push the entire feature branch
 
-- [ ] Run: `git -C /Users/majiajun/workspace/SliceAI-lite push`
+- [x] Run: `git -C /Users/majiajun/workspace/SliceAI-lite push`
 
 Expected: 7 commits (Tasks 1-7) pushed; CI runs green.
 
-- [ ] Watch CI: `gh -R yingjialong/SliceAI-lite run watch $(gh -R yingjialong/SliceAI-lite run list --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status`
+- [x] Watch CI: `gh -R yingjialong/SliceAI-lite run watch $(gh -R yingjialong/SliceAI-lite run list --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status`
 
 Expected: CI passes (build + tests + SwiftLint).
 

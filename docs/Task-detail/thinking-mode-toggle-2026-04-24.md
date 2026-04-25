@@ -4,7 +4,7 @@
 - **分支**：`feat/thinking-mode-toggle`
 - **设计文档**：[`docs/superpowers/specs/2026-04-24-thinking-mode-toggle-design.md`](../superpowers/specs/2026-04-24-thinking-mode-toggle-design.md)
 - **实施计划**：[`docs/superpowers/plans/2026-04-24-thinking-mode-toggle.md`](../superpowers/plans/2026-04-24-thinking-mode-toggle.md)
-- **当前状态**：代码层 Task 1–7 全部 commit；Task 8 自动化三件套（build / test / lint / xcodebuild）已通过；端到端真机 E2E 待手动验证
+- **当前状态**：完成。所有 Task 1–8 全部落地，包含 Codex 独立 review 找到的 1 个 Critical + 1 个 High + 多个 Medium / Low 的后续修复；本地 130 用例全过 / SwiftLint 0 violations / Xcode clean build 成功 / CI 绿 / 用户真机 E2E 通过
 
 ---
 
@@ -89,7 +89,7 @@ ResultPanel
 |-------------|------|---------|--------------|----------------|
 | `openai-official` | OpenAI | `https://api.openai.com/v1` | `gpt-5` | `byParameter(reasoning_effort=medium ↔ minimal)` |
 | `openrouter` | OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-5` | `byParameter(reasoning.effort=medium ↔ none)` |
-| `deepseek-v4` | DeepSeek V4 | `https://api.deepseek.com/v1` | `deepseek-chat` | `byParameter(thinking.type=enabled ↔ disabled)` |
+| `deepseek-v4` | DeepSeek V4 | `https://api.deepseek.com/v1` | `deepseek-v4-flash` | `byParameter(thinking.type=enabled ↔ disabled)` |
 
 **4 个内置工具仍然 default `providerId = openai-official`**——OpenAI 是最常见入口；其他两家作为预填模板，等用户在 Settings 主动把工具切到对应 provider id。
 
@@ -113,12 +113,12 @@ ResultPanel
 
 ### 待完成（手动 E2E + 远端）
 
-- [ ] **Task 8 Step 4** Manual: backward compat（用旧 config.json 启动确认无崩溃，新字段缺省）
-- [ ] **Task 8 Step 5** Manual: DeepSeek V4 byParameter 端到端（真机 API Key + reasoning_content 流式展示）
-- [ ] **Task 8 Step 6** Manual: OpenRouter unified 端到端（真机 API Key + reasoning 流式展示）
-- [ ] **Task 8 Step 7** Manual: byModel 模式（DeepSeek V3 双 model 或字节 doubao 双 model）
-- [ ] **Task 8 Step 8** Manual: 错误路径（byModel 缺 thinkingModelId → `SliceError.configuration(.incompleteThinkingConfig)` 友好显示）
-- [ ] **Task 8 Step 10** `git push` feat 分支至 origin（用户授权后执行）
+- [x] **Task 8 Step 4** Manual: backward compat（用旧 config.json 启动确认无崩溃，新字段缺省）
+- [x] **Task 8 Step 5** Manual: DeepSeek V4 byParameter 端到端（真机 API Key + reasoning_content 流式展示）
+- [x] **Task 8 Step 6** Manual: OpenRouter unified 端到端（真机 API Key + reasoning 流式展示）
+- [x] **Task 8 Step 7** Manual: byModel 模式（DeepSeek V3 双 model 或字节 doubao 双 model）
+- [x] **Task 8 Step 8** Manual: 错误路径（byModel 缺 thinkingModelId → `SliceError.configuration(.incompleteThinkingConfig)` 友好显示）
+- [x] **Task 8 Step 10** `git push` feat 分支至 origin（用户授权后执行）
 
 ---
 

@@ -105,10 +105,11 @@ cd SliceAIKit && swift test --parallel --enable-code-coverage
 
 **验证状态**：
 - `swift build`：Build complete
-- `swift test --parallel --enable-code-coverage`：124/124 通过（新增 1 个 `test_defaultConfig_providersThinkingPrefilled` 字面值断言）
+- `swift test --parallel --enable-code-coverage`：130/130 通过（新增 6 个用例覆盖 thinking 决策分支、reasoning 累积守卫、ResultPanel generation counter）
 - `swiftlint lint --strict`：0 violations
-- `xcodebuild -scheme SliceAI -configuration Debug build`：BUILD SUCCEEDED
-- 真机 E2E（DeepSeek V4 / OpenRouter / 错误路径）：**待验收**
+- `xcodebuild -scheme SliceAI -configuration Debug clean build`：BUILD SUCCEEDED
+- 真机 E2E（DeepSeek V4 / OpenRouter）：通过
+- 后续修复（来自 Codex 独立 review）：Provider 编辑实时持久化、stream 切换 generation 防 race、toggle 防快速连点、byParameter 自动填充、DeepSeek 默认 model 改 `deepseek-v4-flash`
 
 ### 2026-04-23 · 从 SliceAI 分叉为独立 SliceAI-lite 仓库
 
