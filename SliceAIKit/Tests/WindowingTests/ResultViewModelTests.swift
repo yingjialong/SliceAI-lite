@@ -61,3 +61,29 @@ final class ResultViewModelTests: XCTestCase {
         XCTAssertFalse(vm.reasoningExpanded)
     }
 }
+
+/// `ResultPanel` generation counter 行为测试
+///
+/// 锁定 race fix：streamTask 在 cancel 后仍可能 append 一个已 buffer 的 chunk。
+/// generation stamp 让 ResultPanel 静默丢弃旧 stream 的残留 chunk，
+/// 避免污染新一次 open() 的 panel 内容。
+@MainActor
+final class ResultPanelGenerationTests: XCTestCase {
+
+    /// 初始 generation 必须为 0（任何带 gen=0 的 stale 调用都该被忽略——除非真的有人 open 之前就调，理论上不该发生）
+    func test_initialGeneration_isZero() {
+        let panel = ResultPanel()
+        XCTAssertEqual(panel.currentGeneration(), 0)
+    }
+
+    /// open() 单调递增 generation，让旧 streamTask 的 stamp 即时失效
+    func test_openIncrementsGenerationMonotonically() {
+        let panel = ResultPanel()
+        panel.open(toolName: "T", model: "M", anchor: .zero)
+        XCTAssertEqual(panel.currentGeneration(), 1)
+        panel.open(toolName: "T", model: "M", anchor: .zero)
+        XCTAssertEqual(panel.currentGeneration(), 2)
+        panel.open(toolName: "T", model: "M", anchor: .zero)
+        XCTAssertEqual(panel.currentGeneration(), 3)
+    }
+}

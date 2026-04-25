@@ -15,8 +15,10 @@ import SwiftUI
 ///     anchor: payload.screenPoint,
 ///     onDismiss: { streamTask.cancel() }   // 用户主动关闭时取消 LLM 请求
 /// )
-/// panel.append("Hello")     // 每收到一段 delta 调一次
-/// panel.finish()            // 流结束
+/// let gen = panel.currentGeneration()      // stream 创建前 snapshot 当前代号
+/// // ...
+/// panel.append(chunk, generation: gen)     // 每收到一段 chunk 调一次（带 gen 防 race）
+/// panel.finish(generation: gen)            // 流结束（带 gen 防 race）
 /// // 出错时（带恢复动作）：
 /// // panel.fail(with: .provider(.unauthorized),
 /// //            onRetry: { ... }, onOpenSettings: { ... })
@@ -53,8 +55,21 @@ public final class ResultPanel {
     /// 是否钉住；跨 open() 保留，让用户钉过的窗口在新 tool 触发后仍保持钉住
     private var isPinned: Bool = false
 
+    /// 单调递增的 stream 代号；每次 `open()` +1
+    ///
+    /// 防御 race：Swift 结构化并发的 cancel 是协作式的——`streamTask.cancel()` 后
+    /// 旧 task 内 `for try await chunk in stream` 仍会处理至少一个已 buffer 的
+    /// chunk 才感知到 CancellationError。该窗口期内若 `execute(...)` 已重新 open
+    /// panel，旧 task 调用 `append/finish` 会污染新 panel 的内容。
+    /// 调用方在创建 streamTask 前读 `currentGeneration()`，每次 append/finish
+    /// 都把这个代号传回；不匹配静默丢弃。
+    private var generation: Int = 0
+
     /// 无状态构造器
     public init() {}
+
+    /// 当前 stream 代号；调用方在创建 streamTask 时读取作为 stamp
+    public func currentGeneration() -> Int { generation }
 
     /// 展示结果窗口
     /// - Parameters:
@@ -78,6 +93,8 @@ public final class ResultPanel {
         thinkingEnabled: Bool = false,
         onToggleThinking: (@MainActor () -> Void)? = nil
     ) {
+        // 递增 generation：旧 streamTask 持有的旧 gen 现在已失效，后续 append/finish 调用会被丢弃
+        generation += 1
         // 缓存 dismiss 回调；下次 open 时会被覆盖（旧 task 应在那之前自然结束）
         self.onDismiss = onDismiss
 
@@ -129,14 +146,20 @@ public final class ResultPanel {
 
     /// 追加一段流式 ChatChunk 到结果区；同时处理正文 delta 与 reasoning delta
     ///
-    /// - Parameter chunk: SSE 流式片段，包含 delta（正文增量）和 reasoningDelta（推理增量）
+    /// - Parameters:
+    ///   - chunk: SSE 流式片段，包含 delta（正文增量）和 reasoningDelta（推理增量）
+    ///   - generation: 调用方创建 streamTask 时持有的代号；不匹配当前 generation
+    ///     说明这是已被 cancel 的旧 stream 残留 chunk，静默丢弃避免污染新 panel 内容
     /// - Note: 对不支持 thinking 的模型，chunk.reasoningDelta 始终为 nil，不影响正常流程
-    public func append(_ chunk: SliceCore.ChatChunk) {
+    public func append(_ chunk: SliceCore.ChatChunk, generation: Int) {
+        guard generation == self.generation else { return }
         viewModel.append(delta: chunk.delta, reasoningDelta: chunk.reasoningDelta)
     }
 
     /// 标记流式输出正常结束（关闭闪烁光标）
-    public func finish() {
+    /// - Parameter generation: 调用方持有的代号；不匹配当前 generation 说明已被超越，丢弃 finish 信号
+    public func finish(generation: Int) {
+        guard generation == self.generation else { return }
         viewModel.finish()
     }
 

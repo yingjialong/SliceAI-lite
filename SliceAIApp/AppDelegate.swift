@@ -331,13 +331,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func execute(tool: SliceCore.Tool, payload: SelectionPayload) {
         let streamTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            // 在 stream 创建前 snapshot 当前 generation；后续 toggle/regenerate 触发的新 open()
+            // 会让 panel.generation 递增，此处 hold 的 gen 失效，append/finish 被丢弃
+            // 这是协作式 cancel 的兜底：cancel 后 for-await 还会处理已 buffer 的 chunk，
+            // 必须靠 generation stamp 防止旧 stream 污染新 panel 内容
+            let gen = self.container.resultPanel.currentGeneration()
             do {
                 let stream = try await self.container.toolExecutor.execute(tool: tool, payload: payload)
                 // 传递完整 ChatChunk（含 reasoningDelta），由 ResultPanel.append 分发到正文和推理区
                 for try await chunk in stream {
-                    self.container.resultPanel.append(chunk)
+                    self.container.resultPanel.append(chunk, generation: gen)
                 }
-                self.container.resultPanel.finish()
+                self.container.resultPanel.finish(generation: gen)
             } catch {
                 self.handleStreamError(error, tool: tool, payload: payload)
             }
