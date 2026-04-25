@@ -84,13 +84,16 @@ public enum DefaultConfiguration {
     /// thinking 字段预填 DeepSeek V4 `thinking.type` 模板（参见
     /// `SettingsUI/Thinking/ThinkingTemplate.swift` 的 `deepSeekV4` case）；
     /// DeepSeek V4 已合并 V3 chat / V3 reasoner 双 model，统一以参数切 thinking。
+    /// defaultModel 用 `deepseek-v4-flash` 而非 legacy alias `deepseek-chat`：
+    /// 后者是 V3 时代的别名，DeepSeek 官方 changelog 标注 2026-07-24 后停用，
+    /// 直接用 V4 系列正式 model id（flash 是最便宜的入门款，pro 给重活）。
     public static let deepSeekV4Default = Provider(
         id: "deepseek-v4",
         name: "DeepSeek V4",
         // 硬编码的常量字符串，强制解包安全
         baseURL: URL(string: "https://api.deepseek.com/v1")!, // swiftlint:disable:this force_unwrapping
         apiKeyRef: "keychain:deepseek-v4",
-        defaultModel: "deepseek-chat",
+        defaultModel: "deepseek-v4-flash",
         thinking: .byParameter(
             enableBodyJSON: #"{"thinking":{"type":"enabled"}}"#,
             disableBodyJSON: #"{"thinking":{"type":"disabled"}}"#
